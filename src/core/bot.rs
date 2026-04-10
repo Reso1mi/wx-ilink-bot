@@ -79,57 +79,252 @@ pub struct BotSender {
     primary_account_id: String,
 }
 
-#[async_trait]
-impl MessageSender for BotSender {
-    async fn send_text(&self, to_user_id: &str, text: &str) -> Result<()> {
+/// 查找结果：匹配的账号 + context_token
+struct ResolvedAccount {
+    account: Arc<Account>,
+    account_id: String,
+    context_token: String,
+}
+
+impl BotSender {
+    /// 查找目标用户对应的账号（跨账号调度核心）
+    async fn resolve_account(&self, to_user_id: &str) -> Result<ResolvedAccount> {
         // 1. 优先尝试 primary account
-        if let Some(token) = self
-            .ctx_store
-            .get(&self.primary_account_id, to_user_id)
-            .await
-        {
-            let accounts = self.accounts.read().await;
-            if let Some(account) = accounts.get(&self.primary_account_id) {
-                account
-                    .api
-                    .send_message(to_user_id, text, &token, None)
-                    .await?;
-                info!(
-                    "消息已发送(本账号): account={} to={} text_len={}",
-                    self.primary_account_id,
-                    to_user_id,
-                    text.len()
-                );
-                return Ok(());
+        if !self.primary_account_id.is_empty() {
+            if let Some(token) = self
+                .ctx_store
+                .get(&self.primary_account_id, to_user_id)
+                .await
+            {
+                let accounts = self.accounts.read().await;
+                if let Some(account) = accounts.get(&self.primary_account_id) {
+                    return Ok(ResolvedAccount {
+                        account: Arc::clone(account),
+                        account_id: self.primary_account_id.clone(),
+                        context_token: token,
+                    });
+                }
             }
         }
 
-        // 2. 遍历所有账号，查找拥有该用户 context_token 的账号
+        // 2. 遍历所有账号查找
         let accounts = self.accounts.read().await;
         for (account_id, account) in accounts.iter() {
             if account_id == &self.primary_account_id {
-                continue; // 已尝试过
+                continue;
             }
             if let Some(token) = self.ctx_store.get(account_id, to_user_id).await {
-                account
-                    .api
-                    .send_message(to_user_id, text, &token, None)
-                    .await?;
-                info!(
-                    "消息已发送(跨账号调度): account={} to={} text_len={}",
-                    account_id,
-                    to_user_id,
-                    text.len()
-                );
-                return Ok(());
+                return Ok(ResolvedAccount {
+                    account: Arc::clone(account),
+                    account_id: account_id.clone(),
+                    context_token: token,
+                });
             }
         }
 
-        // 3. 找不到
         anyhow::bail!(
             "无法发送消息给 {}: 所有账号中均未找到该用户的 context_token，该用户可能从未给 Bot 发过消息",
             to_user_id
         )
+    }
+}
+
+#[async_trait]
+impl MessageSender for BotSender {
+    async fn send_text(&self, to_user_id: &str, text: &str) -> Result<()> {
+        let resolved = self.resolve_account(to_user_id).await?;
+        resolved
+            .account
+            .api
+            .send_message(to_user_id, text, &resolved.context_token, None)
+            .await?;
+        info!(
+            "文本消息已发送: account={} to={} len={}",
+            resolved.account_id,
+            to_user_id,
+            text.len()
+        );
+        Ok(())
+    }
+
+    async fn send_image(
+        &self,
+        to_user_id: &str,
+        file_id: &str,
+        download_url: &str,
+        aes_key: &str,
+    ) -> Result<()> {
+        let resolved = self.resolve_account(to_user_id).await?;
+        resolved
+            .account
+            .api
+            .send_image(
+                to_user_id,
+                &resolved.context_token,
+                file_id,
+                download_url,
+                aes_key,
+            )
+            .await?;
+        info!(
+            "图片消息已发送: account={} to={} file_id={}",
+            resolved.account_id, to_user_id, file_id
+        );
+        Ok(())
+    }
+
+    async fn send_file(
+        &self,
+        to_user_id: &str,
+        file_id: &str,
+        download_url: &str,
+        file_name: &str,
+        file_size: i64,
+    ) -> Result<()> {
+        let resolved = self.resolve_account(to_user_id).await?;
+        resolved
+            .account
+            .api
+            .send_file(
+                to_user_id,
+                &resolved.context_token,
+                file_id,
+                download_url,
+                file_name,
+                file_size,
+            )
+            .await?;
+        info!(
+            "文件消息已发送: account={} to={} file={}",
+            resolved.account_id, to_user_id, file_name
+        );
+        Ok(())
+    }
+
+    async fn send_video(
+        &self,
+        to_user_id: &str,
+        file_id: &str,
+        download_url: &str,
+        video_size: i64,
+        play_length: i64,
+    ) -> Result<()> {
+        let resolved = self.resolve_account(to_user_id).await?;
+        resolved
+            .account
+            .api
+            .send_video(
+                to_user_id,
+                &resolved.context_token,
+                file_id,
+                download_url,
+                video_size,
+                play_length,
+            )
+            .await?;
+        info!(
+            "视频消息已发送: account={} to={} size={} length={}s",
+            resolved.account_id, to_user_id, video_size, play_length
+        );
+        Ok(())
+    }
+
+    async fn upload_and_send_image(
+        &self,
+        to_user_id: &str,
+        data: &[u8],
+        file_name: &str,
+        content_type: &str,
+    ) -> Result<()> {
+        let resolved = self.resolve_account(to_user_id).await?;
+        let (file_id, download_url) = resolved
+            .account
+            .api
+            .upload_media(data, file_name, 1, to_user_id, content_type)
+            .await?;
+        resolved
+            .account
+            .api
+            .send_image(
+                to_user_id,
+                &resolved.context_token,
+                &file_id,
+                &download_url,
+                "",
+            )
+            .await?;
+        info!(
+            "图片上传并发送: account={} to={} file={}",
+            resolved.account_id, to_user_id, file_name
+        );
+        Ok(())
+    }
+
+    async fn upload_and_send_file(
+        &self,
+        to_user_id: &str,
+        data: &[u8],
+        file_name: &str,
+        content_type: &str,
+    ) -> Result<()> {
+        let resolved = self.resolve_account(to_user_id).await?;
+        let file_size = data.len() as i64;
+        let (file_id, download_url) = resolved
+            .account
+            .api
+            .upload_media(data, file_name, 4, to_user_id, content_type)
+            .await?;
+        resolved
+            .account
+            .api
+            .send_file(
+                to_user_id,
+                &resolved.context_token,
+                &file_id,
+                &download_url,
+                file_name,
+                file_size,
+            )
+            .await?;
+        info!(
+            "文件上传并发送: account={} to={} file={} size={}",
+            resolved.account_id, to_user_id, file_name, file_size
+        );
+        Ok(())
+    }
+
+    async fn upload_and_send_video(
+        &self,
+        to_user_id: &str,
+        data: &[u8],
+        file_name: &str,
+        content_type: &str,
+        play_length: i64,
+    ) -> Result<()> {
+        let resolved = self.resolve_account(to_user_id).await?;
+        let video_size = data.len() as i64;
+        let (file_id, download_url) = resolved
+            .account
+            .api
+            .upload_media(data, file_name, 3, to_user_id, content_type)
+            .await?;
+        resolved
+            .account
+            .api
+            .send_video(
+                to_user_id,
+                &resolved.context_token,
+                &file_id,
+                &download_url,
+                video_size,
+                play_length,
+            )
+            .await?;
+        info!(
+            "视频上传并发送: account={} to={} file={} size={} length={}s",
+            resolved.account_id, to_user_id, file_name, video_size, play_length
+        );
+        Ok(())
     }
 }
 
@@ -260,17 +455,58 @@ impl WeixinBot {
 
     // ==================== 消息发送 ====================
 
-    /// 向指定用户发送消息（跨账号自动调度）
-    ///
-    /// 自动查找拥有该用户 context_token 的账号，通过该账号的 API 发送。
-    /// 可从 HTTP 接口调用，实现主动推送。
-    pub async fn send_message(&self, to_user_id: &str, text: &str) -> Result<()> {
-        let sender = BotSender {
+    /// 创建一个全局发送器（跨账号自动调度）
+    fn create_sender(&self) -> BotSender {
+        BotSender {
             accounts: Arc::clone(&self.accounts),
             ctx_store: self.ctx_store.clone(),
-            primary_account_id: String::new(), // 无优先账号，全局查找
-        };
-        sender.send_text(to_user_id, text).await
+            primary_account_id: String::new(),
+        }
+    }
+
+    /// 向指定用户发送文本消息（跨账号自动调度）
+    pub async fn send_message(&self, to_user_id: &str, text: &str) -> Result<()> {
+        self.create_sender().send_text(to_user_id, text).await
+    }
+
+    /// 向指定用户发送图片（上传+发送，跨账号自动调度）
+    pub async fn send_image(
+        &self,
+        to_user_id: &str,
+        data: &[u8],
+        file_name: &str,
+        content_type: &str,
+    ) -> Result<()> {
+        self.create_sender()
+            .upload_and_send_image(to_user_id, data, file_name, content_type)
+            .await
+    }
+
+    /// 向指定用户发送文件（上传+发送，跨账号自动调度）
+    pub async fn send_file(
+        &self,
+        to_user_id: &str,
+        data: &[u8],
+        file_name: &str,
+        content_type: &str,
+    ) -> Result<()> {
+        self.create_sender()
+            .upload_and_send_file(to_user_id, data, file_name, content_type)
+            .await
+    }
+
+    /// 向指定用户发送视频（上传+发送，跨账号自动调度）
+    pub async fn send_video(
+        &self,
+        to_user_id: &str,
+        data: &[u8],
+        file_name: &str,
+        content_type: &str,
+        play_length: i64,
+    ) -> Result<()> {
+        self.create_sender()
+            .upload_and_send_video(to_user_id, data, file_name, content_type, play_length)
+            .await
     }
 
     // ==================== 状态查询 ====================

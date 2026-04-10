@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Multipart, Query, State},
     response::Json,
     routing::{get, post},
     Router,
@@ -7,7 +7,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::core::bot::WeixinBot;
 
@@ -28,6 +28,7 @@ pub fn create_router(bot: SharedBot) -> Router {
         .route("/account/status", get(account_status_handler))
         // 消息发送（跨账号自动调度）
         .route("/message/send", post(send_message_handler))
+        .route("/message/send-file", post(send_file_handler))
         .with_state(bot)
 }
 
@@ -43,7 +44,8 @@ async fn index_handler() -> Json<Value> {
             "POST /account/add": "同步添加账号（阻塞等待扫码）",
             "POST /account/qrcode": "异步添加账号 Step 1（获取二维码）",
             "GET /account/status?qrcode=xxx": "异步添加账号 Step 2（轮询状态）",
-            "POST /message/send": "发送消息给指定用户（跨账号自动调度）",
+            "POST /message/send": "发送文本消息给指定用户（跨账号自动调度）",
+            "POST /message/send-file": "上传并发送文件/图片/视频（multipart/form-data）",
         }
     }))
 }
@@ -191,9 +193,7 @@ pub async fn start_http_server(bot: SharedBot, port: u16) {
         .await
         .expect(&format!("无法绑定端口 {}", port));
 
-    axum::serve(listener, app)
-        .await
-        .expect("HTTP 服务异常退出");
+    axum::serve(listener, app).await.expect("HTTP 服务异常退出");
 }
 
 /// 发送消息请求体
@@ -201,11 +201,11 @@ pub async fn start_http_server(bot: SharedBot, port: u16) {
 struct SendMessageBody {
     /// 目标用户 ID（xxx@im.wechat）
     to_user_id: String,
-    /// 消息内容
+    /// 消息内容（文本消息必填）
     text: String,
 }
 
-/// 发送消息给指定用户（跨账号自动调度）
+/// 发送文本消息给指定用户（跨账号自动调度）
 ///
 /// `POST /message/send`
 ///
@@ -213,8 +213,6 @@ struct SendMessageBody {
 /// ```json
 /// { "to_user_id": "xxx@im.wechat", "text": "你好" }
 /// ```
-///
-/// 自动查找该用户对应的 Bot 账号并发送消息。
 async fn send_message_handler(
     State(bot): State<SharedBot>,
     Json(body): Json<SendMessageBody>,
@@ -229,11 +227,139 @@ async fn send_message_handler(
     match bot.send_message(&body.to_user_id, &body.text).await {
         Ok(_) => Json(json!({
             "success": true,
+            "type": "text",
             "to_user_id": body.to_user_id,
         })),
         Err(e) => Json(json!({
             "success": false,
             "error": format!("{}", e),
         })),
+    }
+}
+
+/// 上传并发送文件/图片/视频（multipart/form-data）
+///
+/// `POST /message/send-file`
+///
+/// Form 字段:
+/// - `to_user_id`: 目标用户 ID（必填）
+/// - `type`: 消息类型，可选 "image" / "file" / "video"（默认根据 content_type 推断）
+/// - `file`: 文件内容（必填）
+/// - `play_length`: 视频时长秒数（仅 video 类型）
+async fn send_file_handler(State(bot): State<SharedBot>, mut multipart: Multipart) -> Json<Value> {
+    let mut to_user_id = String::new();
+    let mut msg_type = String::new();
+    let mut file_data: Option<Vec<u8>> = None;
+    let mut file_name = String::from("upload");
+    let mut content_type = String::from("application/octet-stream");
+    let mut play_length: i64 = 0;
+
+    // 解析 multipart 字段
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "to_user_id" => {
+                to_user_id = field.text().await.unwrap_or_default();
+            }
+            "type" => {
+                msg_type = field.text().await.unwrap_or_default();
+            }
+            "play_length" => {
+                play_length = field.text().await.unwrap_or_default().parse().unwrap_or(0);
+            }
+            "file" => {
+                if let Some(fname) = field.file_name() {
+                    file_name = fname.to_string();
+                }
+                if let Some(ct) = field.content_type() {
+                    content_type = ct.to_string();
+                }
+                match field.bytes().await {
+                    Ok(bytes) => file_data = Some(bytes.to_vec()),
+                    Err(e) => {
+                        return Json(json!({
+                            "success": false,
+                            "error": format!("读取文件失败: {}", e),
+                        }));
+                    }
+                }
+            }
+            _ => {
+                warn!("未知的 multipart 字段: {}", name);
+            }
+        }
+    }
+
+    // 校验必填字段
+    if to_user_id.is_empty() {
+        return Json(json!({
+            "success": false,
+            "error": "to_user_id 不能为空",
+        }));
+    }
+
+    let data = match file_data {
+        Some(d) => d,
+        None => {
+            return Json(json!({
+                "success": false,
+                "error": "缺少 file 字段",
+            }));
+        }
+    };
+
+    // 自动推断消息类型
+    if msg_type.is_empty() {
+        msg_type = infer_message_type(&content_type);
+    }
+
+    info!(
+        "收到文件发送请求: to={} type={} file={} size={} content_type={}",
+        to_user_id,
+        msg_type,
+        file_name,
+        data.len(),
+        content_type
+    );
+
+    let result = match msg_type.as_str() {
+        "image" => {
+            bot.send_image(&to_user_id, &data, &file_name, &content_type)
+                .await
+        }
+        "video" => {
+            bot.send_video(&to_user_id, &data, &file_name, &content_type, play_length)
+                .await
+        }
+        _ => {
+            // 默认作为文件发送
+            bot.send_file(&to_user_id, &data, &file_name, &content_type)
+                .await
+        }
+    };
+
+    match result {
+        Ok(_) => Json(json!({
+            "success": true,
+            "type": msg_type,
+            "to_user_id": to_user_id,
+            "file_name": file_name,
+            "file_size": data.len(),
+        })),
+        Err(e) => Json(json!({
+            "success": false,
+            "error": format!("{}", e),
+        })),
+    }
+}
+
+/// 根据 Content-Type 推断消息类型
+fn infer_message_type(content_type: &str) -> String {
+    if content_type.starts_with("image/") {
+        "image".to_string()
+    } else if content_type.starts_with("video/") {
+        "video".to_string()
+    } else {
+        "file".to_string()
     }
 }

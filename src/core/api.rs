@@ -339,6 +339,97 @@ impl ILinkAPI {
         context_token: &str,
         client_id: Option<&str>,
     ) -> Result<SendMessageResponse> {
+        let item = json!({
+            "type": 1,
+            "text_item": {"text": text}
+        });
+        self.send_raw_message(to_user_id, context_token, client_id, vec![item])
+            .await
+    }
+
+    /// 发送图片消息
+    ///
+    /// `media` 为已上传的媒体信息（来自 `upload_media` 或接收到的消息中的媒体信息）
+    pub async fn send_image(
+        &self,
+        to_user_id: &str,
+        context_token: &str,
+        file_id: &str,
+        download_url: &str,
+        aes_key: &str,
+    ) -> Result<SendMessageResponse> {
+        let item = json!({
+            "type": 2,
+            "image_item": {
+                "media": {
+                    "file_id": file_id,
+                    "full_url": download_url,
+                    "aes_key": aes_key,
+                }
+            }
+        });
+        self.send_raw_message(to_user_id, context_token, None, vec![item])
+            .await
+    }
+
+    /// 发送文件消息
+    pub async fn send_file(
+        &self,
+        to_user_id: &str,
+        context_token: &str,
+        file_id: &str,
+        download_url: &str,
+        file_name: &str,
+        file_size: i64,
+    ) -> Result<SendMessageResponse> {
+        let item = json!({
+            "type": 4,
+            "file_item": {
+                "file_name": file_name,
+                "len": file_size,
+                "media": {
+                    "file_id": file_id,
+                    "full_url": download_url,
+                }
+            }
+        });
+        self.send_raw_message(to_user_id, context_token, None, vec![item])
+            .await
+    }
+
+    /// 发送视频消息
+    pub async fn send_video(
+        &self,
+        to_user_id: &str,
+        context_token: &str,
+        file_id: &str,
+        download_url: &str,
+        video_size: i64,
+        play_length: i64,
+    ) -> Result<SendMessageResponse> {
+        let item = json!({
+            "type": 5,
+            "video_item": {
+                "video_size": video_size,
+                "play_length": play_length,
+                "media": {
+                    "file_id": file_id,
+                    "full_url": download_url,
+                }
+            }
+        });
+        self.send_raw_message(to_user_id, context_token, None, vec![item])
+            .await
+    }
+
+    /// 底层发送消息（构造 item_list）
+    async fn send_raw_message(
+        &self,
+        to_user_id: &str,
+        context_token: &str,
+        client_id: Option<&str>,
+        item_list: Vec<Value>,
+    ) -> Result<SendMessageResponse> {
         let cid = client_id
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("bot-{:016x}", rand::thread_rng().gen::<u64>()));
@@ -350,12 +441,7 @@ impl ILinkAPI {
                 "client_id": cid,
                 "message_type": 2,
                 "message_state": 2,
-                "item_list": [
-                    {
-                        "type": 1,
-                        "text_item": {"text": text}
-                    }
-                ],
+                "item_list": item_list,
                 "context_token": if context_token.is_empty() { Value::Null } else { Value::String(context_token.to_string()) },
             }
         });
@@ -364,6 +450,59 @@ impl ILinkAPI {
             .post("ilink/bot/sendmessage", body, DEFAULT_API_TIMEOUT_MS)
             .await?;
         serde_json::from_value(value).context("解析 sendmessage 响应失败")
+    }
+
+    /// 上传媒体文件（先获取预签名 URL，再上传文件内容）
+    ///
+    /// - `data`: 文件字节内容
+    /// - `file_name`: 文件名
+    /// - `media_type`: 1=图片, 2=语音, 3=视频, 4=文件
+    /// - `to_user_id`: 目标用户
+    /// - `content_type`: MIME 类型（如 "image/png"）
+    ///
+    /// 返回 (file_id, download_url)
+    pub async fn upload_media(
+        &self,
+        data: &[u8],
+        file_name: &str,
+        media_type: i32,
+        to_user_id: &str,
+        content_type: &str,
+    ) -> Result<(String, String)> {
+        // 1. 获取预签名上传 URL
+        let upload_resp = self
+            .get_upload_url(file_name, media_type, to_user_id)
+            .await?;
+
+        let upload_url = upload_resp
+            .upload_url
+            .ok_or_else(|| anyhow::anyhow!("未获取到上传 URL"))?;
+        let download_url = upload_resp
+            .download_url
+            .ok_or_else(|| anyhow::anyhow!("未获取到下载 URL"))?;
+        let file_id = upload_resp
+            .file_id
+            .ok_or_else(|| anyhow::anyhow!("未获取到 file_id"))?;
+
+        // 2. 上传文件到预签名 URL（PUT）
+        let resp = self
+            .client
+            .put(&upload_url)
+            .header("Content-Type", content_type)
+            .body(data.to_vec())
+            .timeout(Duration::from_secs(60))
+            .send()
+            .await
+            .context("上传媒体文件失败")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("媒体上传失败 HTTP {}: {}", status, text);
+        }
+
+        debug!("媒体上传成功: file_id={} url={}", file_id, download_url);
+        Ok((file_id, download_url))
     }
 
     /// 获取 Bot 配置（typing_ticket 等）
@@ -403,7 +542,6 @@ impl ILinkAPI {
     }
 
     /// 获取媒体上传预签名 URL
-    #[allow(dead_code)]
     pub async fn get_upload_url(
         &self,
         filekey: &str,
