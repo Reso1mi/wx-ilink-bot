@@ -205,7 +205,7 @@ pub async fn start_http_server(bot: SharedBot, port: u16) {
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .expect(&format!("无法绑定端口 {}", port));
+        .unwrap_or_else(|_| panic!("无法绑定端口 {}", port));
 
     axum::serve(listener, app).await.expect("HTTP 服务异常退出");
 }

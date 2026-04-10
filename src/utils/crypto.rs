@@ -14,7 +14,10 @@ pub fn aes_ecb_decrypt(ciphertext: &[u8], key_b64: &str) -> Result<Vec<u8>> {
         .context("解码 AES key 失败")?;
 
     if key_bytes.len() != 16 {
-        anyhow::bail!("AES key 长度无效: 期望 16 字节, 实际 {} 字节", key_bytes.len());
+        anyhow::bail!(
+            "AES key 长度无效: 期望 16 字节, 实际 {} 字节",
+            key_bytes.len()
+        );
     }
 
     let cipher = Aes128::new_from_slice(&key_bytes)
@@ -51,7 +54,10 @@ pub fn aes_ecb_encrypt(plaintext: &[u8], key_b64: &str) -> Result<Vec<u8>> {
         .context("解码 AES key 失败")?;
 
     if key_bytes.len() != 16 {
-        anyhow::bail!("AES key 长度无效: 期望 16 字节, 实际 {} 字节", key_bytes.len());
+        anyhow::bail!(
+            "AES key 长度无效: 期望 16 字节, 实际 {} 字节",
+            key_bytes.len()
+        );
     }
 
     let cipher = Aes128::new_from_slice(&key_bytes)
@@ -60,7 +66,7 @@ pub fn aes_ecb_encrypt(plaintext: &[u8], key_b64: &str) -> Result<Vec<u8>> {
     // PKCS7 填充
     let pad_len = BLOCK_SIZE - (plaintext.len() % BLOCK_SIZE);
     let mut padded = plaintext.to_vec();
-    padded.extend(std::iter::repeat(pad_len as u8).take(pad_len));
+    padded.extend(std::iter::repeat_n(pad_len as u8, pad_len));
 
     // ECB 模式逐块加密
     for chunk in padded.chunks_exact_mut(BLOCK_SIZE) {

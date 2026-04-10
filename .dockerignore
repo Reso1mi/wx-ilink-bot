@@ -1,0 +1,7 @@
+.git
+.gitignore
+target
+state
+.env
+.env.*
+!.env.example

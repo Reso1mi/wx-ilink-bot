@@ -1,5 +1,5 @@
-use anyhow::{Context, Result};
 use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyInit};
+use anyhow::{Context, Result};
 use base64::Engine;
 use rand::Rng;
 use reqwest::Client;
@@ -131,10 +131,7 @@ impl ILinkAPI {
 
     /// 版本号编码: major<<16 | minor<<8 | patch
     fn build_client_version(version: &str) -> u32 {
-        let parts: Vec<u32> = version
-            .split('.')
-            .filter_map(|p| p.parse().ok())
-            .collect();
+        let parts: Vec<u32> = version.split('.').filter_map(|p| p.parse().ok()).collect();
         let major = parts.first().copied().unwrap_or(0) & 0xFF;
         let minor = parts.get(1).copied().unwrap_or(0) & 0xFF;
         let patch = parts.get(2).copied().unwrap_or(0) & 0xFF;
@@ -187,10 +184,7 @@ impl ILinkAPI {
 
         // 添加 base_info
         if let Some(obj) = body.as_object_mut() {
-            obj.insert(
-                "base_info".to_string(),
-                json!({"channel_version": "1.0.0"}),
-            );
+            obj.insert("base_info".to_string(), json!({"channel_version": "1.0.0"}));
         }
 
         let timeout = Duration::from_millis(timeout_ms);
@@ -255,10 +249,7 @@ impl ILinkAPI {
         base_url: &str,
         qrcode: &str,
     ) -> Result<QRCodeStatusResponse> {
-        let url = format!(
-            "{}/ilink/bot/get_qrcode_status?qrcode={}",
-            base_url, qrcode
-        );
+        let url = format!("{}/ilink/bot/get_qrcode_status?qrcode={}", base_url, qrcode);
         debug!("GET {}", url);
 
         let headers = if self.token.is_some() {
@@ -313,7 +304,10 @@ impl ILinkAPI {
             "get_updates_buf": get_updates_buf,
         });
 
-        match self.post("ilink/bot/getupdates", body, client_timeout).await {
+        match self
+            .post("ilink/bot/getupdates", body, client_timeout)
+            .await
+        {
             Ok(value) => serde_json::from_value(value).context("解析 getupdates 响应失败"),
             Err(e) => {
                 // 超时是正常的，返回空结果
@@ -361,8 +355,7 @@ impl ILinkAPI {
         download_param: &str,
         aes_key_hex: &str,
     ) -> Result<SendMessageResponse> {
-        let aes_key_b64 = base64::engine::general_purpose::STANDARD
-            .encode(aes_key_hex.as_bytes());
+        let aes_key_b64 = base64::engine::general_purpose::STANDARD.encode(aes_key_hex.as_bytes());
         let item = json!({
             "type": 2,
             "image_item": {
@@ -387,8 +380,7 @@ impl ILinkAPI {
         file_name: &str,
         file_size: i64,
     ) -> Result<SendMessageResponse> {
-        let aes_key_b64 = base64::engine::general_purpose::STANDARD
-            .encode(aes_key_hex.as_bytes());
+        let aes_key_b64 = base64::engine::general_purpose::STANDARD.encode(aes_key_hex.as_bytes());
         let item = json!({
             "type": 4,
             "file_item": {
@@ -415,8 +407,7 @@ impl ILinkAPI {
         video_size: i64,
         play_length: i64,
     ) -> Result<SendMessageResponse> {
-        let aes_key_b64 = base64::engine::general_purpose::STANDARD
-            .encode(aes_key_hex.as_bytes());
+        let aes_key_b64 = base64::engine::general_purpose::STANDARD.encode(aes_key_hex.as_bytes());
         let item = json!({
             "type": 5,
             "video_item": {
@@ -490,7 +481,11 @@ impl ILinkAPI {
             rng.fill(&mut filekey_bytes);
             let mut aeskey_bytes = [0u8; 16];
             rng.fill(&mut aeskey_bytes);
-            (hex::encode(filekey_bytes), aeskey_bytes, hex::encode(aeskey_bytes))
+            (
+                hex::encode(filekey_bytes),
+                aeskey_bytes,
+                hex::encode(aeskey_bytes),
+            )
         };
 
         // 2. 计算原始文件 MD5 和大小
@@ -542,7 +537,10 @@ impl ILinkAPI {
 
         info!(
             "CDN 上传: filekey={} encrypted_size={} upload_param_len={} cdn_url_len={}",
-            filekey, encrypted.len(), upload_param.len(), cdn_url.len()
+            filekey,
+            encrypted.len(),
+            upload_param.len(),
+            cdn_url.len()
         );
         // 打印 URL 前缀方便排查格式问题
         let url_preview: String = cdn_url.chars().take(200).collect();
@@ -658,6 +656,7 @@ impl ILinkAPI {
     /// - `filesize`: 加密后文件大小（AES-128-ECB + PKCS7）
     ///
     /// 注意: context_token 不在此 API 的 Body 中
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_upload_url(
         &self,
         filekey: &str,

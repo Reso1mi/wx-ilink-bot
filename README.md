@@ -73,6 +73,56 @@ cargo run --release
 2. HTTP 管理接口启动在 `http://localhost:3000`
 3. 通过 `POST /account/add` 或 `/account/qrcode` 添加新账号
 
+### Docker 部署
+
+项目现在提供了 `Dockerfile` 和 `docker-compose.yml`，推荐直接用 Compose 启动。
+
+```bash
+# 如需自定义配置，先复制配置文件；不复制也会使用默认值
+cp .env.example .env
+
+# 创建状态目录（用于持久化 bot_token、context_token、游标等）
+mkdir -p state
+
+# 构建并后台启动
+docker compose up -d --build
+```
+
+启动后：
+1. 管理后台默认地址为 `http://localhost:3000/admin`
+2. 容器内状态目录固定为 `/app/state`
+3. 宿主机 `./state` 会挂载到容器内，重启容器不会丢失状态
+
+如果你不需要自定义配置，也可以跳过 `cp .env.example .env`，Compose 会直接使用内置默认值。
+
+常用命令：
+
+```bash
+# 查看日志
+docker compose logs -f
+
+# 停止服务
+docker compose down
+```
+
+如果只想构建镜像并手动运行：
+
+```bash
+# 构建镜像
+docker build -t wx-ilink-bot .
+
+# 运行容器
+docker run -d \
+  --name wx-ilink-bot \
+  --restart unless-stopped \
+  -e BOT_STATE_DIR=/app/state \
+  -p 3000:3000 \
+  -v "$(pwd)/state:/app/state" \
+  wx-ilink-bot
+```
+
+如需自定义环境变量，可在 `docker run` 后额外加上 `--env-file .env`。
+
 ### 配置
 
 编辑 `.env` 文件：
