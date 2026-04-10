@@ -1,9 +1,11 @@
 use axum::{
     extract::{Multipart, Query, State},
-    response::Json,
+    response::{Html, Json},
     routing::{get, post},
     Router,
 };
+use axum::body::Body;
+use axum::http::{header, Response, StatusCode};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -18,6 +20,7 @@ pub type SharedBot = Arc<WeixinBot>;
 pub fn create_router(bot: SharedBot) -> Router {
     Router::new()
         .route("/", get(index_handler))
+        .route("/admin", get(admin_handler))
         .route("/health", get(health_handler))
         .route("/status", get(status_handler))
         .route("/users", get(users_handler))
@@ -29,6 +32,8 @@ pub fn create_router(bot: SharedBot) -> Router {
         // 消息发送（跨账号自动调度）
         .route("/message/send", post(send_message_handler))
         .route("/message/send-file", post(send_file_handler))
+        // 图片代理（解决 HTTPS 二维码在 localhost 上无法加载的问题）
+        .route("/proxy/image", get(proxy_image_handler))
         .with_state(bot)
 }
 
@@ -37,6 +42,7 @@ async fn index_handler() -> Json<Value> {
     Json(json!({
         "service": "微信 iLink Bot",
         "endpoints": {
+            "GET /admin": "管理后台页面",
             "GET /health": "健康检查",
             "GET /status": "Bot 状态",
             "GET /accounts": "所有账号列表",
@@ -48,6 +54,11 @@ async fn index_handler() -> Json<Value> {
             "POST /message/send-file": "上传并发送文件/图片/视频（multipart/form-data）",
         }
     }))
+}
+
+/// 管理后台页面
+async fn admin_handler() -> Html<&'static str> {
+    Html(include_str!("../static/index.html"))
 }
 
 /// 健康检查
@@ -362,4 +373,82 @@ fn infer_message_type(content_type: &str) -> String {
     } else {
         "file".to_string()
     }
+}
+
+/// 图片代理查询参数
+#[derive(Deserialize)]
+struct ProxyImageQuery {
+    url: String,
+}
+
+/// 图片代理 — 解决 HTTPS 二维码图片在 localhost 上无法加载的问题
+///
+/// `GET /proxy/image?url=https://...`
+///
+/// 后端抓取远程 HTTPS 图片并以原始 Content-Type 返回给浏览器，
+/// 避免了混合内容安全策略（Mixed Content）和跨域加载限制。
+async fn proxy_image_handler(
+    Query(query): Query<ProxyImageQuery>,
+) -> Result<Response<Body>, (StatusCode, String)> {
+    let url = &query.url;
+
+    // 安全校验：只允许代理 HTTPS URL
+    if !url.starts_with("https://") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "仅支持代理 HTTPS URL".to_string(),
+        ));
+    }
+
+    // 限制域名为 iLink 相关（防止 SSRF）
+    let is_allowed = url.contains("weixin.qq.com")
+        || url.contains("wechat.com")
+        || url.contains("qq.com");
+    if !is_allowed {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "不允许代理该域名".to_string(),
+        ));
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("创建 HTTP 客户端失败: {}", e)))?;
+
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| {
+            warn!("代理图片请求失败: {} - {}", url, e);
+            (StatusCode::BAD_GATEWAY, format!("请求远程图片失败: {}", e))
+        })?;
+
+    if !resp.status().is_success() {
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            format!("远程服务器返回 {}", resp.status()),
+        ));
+    }
+
+    // 获取 Content-Type
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/png")
+        .to_string();
+
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("读取图片内容失败: {}", e)))?;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CACHE_CONTROL, "public, max-age=300")
+        .body(Body::from(bytes.to_vec()))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("构建响应失败: {}", e)))
 }

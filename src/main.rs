@@ -63,7 +63,8 @@ async fn main() {
     println!("\n========================================");
     println!("  微信 iLink Bot 已启动!");
     println!("========================================");
-    println!("HTTP 管理接口: http://localhost:{}", http_port);
+    println!("管理后台:      http://localhost:{}/admin", http_port);
+    println!("HTTP API:      http://localhost:{}", http_port);
     println!(
         "添加新账号:    POST http://localhost:{}/account/add",
         http_port
@@ -80,7 +81,7 @@ async fn main() {
 
     // 8. 等待停止信号
     tokio::signal::ctrl_c().await.ok();
-    println!("\n收到停止信号，正在关闭...");
+    println!("\n收到停止信号, 正在关闭...");
     bot.stop().await;
 
     // 等待一小段时间让长轮询退出

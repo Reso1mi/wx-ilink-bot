@@ -1,11 +1,15 @@
 use anyhow::{Context, Result};
+use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyInit};
 use base64::Engine;
 use rand::Rng;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Duration;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
+
+/// AES-128-ECB 加密器
+type Aes128EcbEnc = ecb::Encryptor<aes::Aes128>;
 
 /// iLink Bot API 封装
 #[derive(Clone)]
@@ -99,9 +103,8 @@ pub struct GetUploadUrlResponse {
     pub ret: i64,
     #[serde(default)]
     pub errcode: i64,
-    pub upload_url: Option<String>,
-    pub download_url: Option<String>,
-    pub file_id: Option<String>,
+    /// CDN 上传凭证（作为 URL 查询参数 encrypted_query_param 的值）
+    pub upload_param: Option<String>,
 }
 
 impl ILinkAPI {
@@ -349,22 +352,24 @@ impl ILinkAPI {
 
     /// 发送图片消息
     ///
-    /// `media` 为已上传的媒体信息（来自 `upload_media` 或接收到的消息中的媒体信息）
+    /// - `download_param`: CDN 上传后从 `x-encrypted-param` 响应头获取
+    /// - `aes_key_hex`: AES 密钥的 hex 字符串（32 字符）
     pub async fn send_image(
         &self,
         to_user_id: &str,
         context_token: &str,
-        file_id: &str,
-        download_url: &str,
-        aes_key: &str,
+        download_param: &str,
+        aes_key_hex: &str,
     ) -> Result<SendMessageResponse> {
+        let aes_key_b64 = base64::engine::general_purpose::STANDARD
+            .encode(aes_key_hex.as_bytes());
         let item = json!({
             "type": 2,
             "image_item": {
                 "media": {
-                    "file_id": file_id,
-                    "full_url": download_url,
-                    "aes_key": aes_key,
+                    "encrypt_query_param": download_param,
+                    "aes_key": aes_key_b64,
+                    "encrypt_type": 1,
                 }
             }
         });
@@ -377,19 +382,22 @@ impl ILinkAPI {
         &self,
         to_user_id: &str,
         context_token: &str,
-        file_id: &str,
-        download_url: &str,
+        download_param: &str,
+        aes_key_hex: &str,
         file_name: &str,
         file_size: i64,
     ) -> Result<SendMessageResponse> {
+        let aes_key_b64 = base64::engine::general_purpose::STANDARD
+            .encode(aes_key_hex.as_bytes());
         let item = json!({
             "type": 4,
             "file_item": {
                 "file_name": file_name,
-                "len": file_size,
+                "len": file_size.to_string(),
                 "media": {
-                    "file_id": file_id,
-                    "full_url": download_url,
+                    "encrypt_query_param": download_param,
+                    "aes_key": aes_key_b64,
+                    "encrypt_type": 1,
                 }
             }
         });
@@ -402,19 +410,22 @@ impl ILinkAPI {
         &self,
         to_user_id: &str,
         context_token: &str,
-        file_id: &str,
-        download_url: &str,
+        download_param: &str,
+        aes_key_hex: &str,
         video_size: i64,
         play_length: i64,
     ) -> Result<SendMessageResponse> {
+        let aes_key_b64 = base64::engine::general_purpose::STANDARD
+            .encode(aes_key_hex.as_bytes());
         let item = json!({
             "type": 5,
             "video_item": {
                 "video_size": video_size,
                 "play_length": play_length,
                 "media": {
-                    "file_id": file_id,
-                    "full_url": download_url,
+                    "encrypt_query_param": download_param,
+                    "aes_key": aes_key_b64,
+                    "encrypt_type": 1,
                 }
             }
         });
@@ -452,57 +463,152 @@ impl ILinkAPI {
         serde_json::from_value(value).context("解析 sendmessage 响应失败")
     }
 
-    /// 上传媒体文件（先获取预签名 URL，再上传文件内容）
+    /// 上传媒体文件到微信 CDN
     ///
-    /// - `data`: 文件字节内容
-    /// - `file_name`: 文件名
-    /// - `media_type`: 1=图片, 2=语音, 3=视频, 4=文件
-    /// - `to_user_id`: 目标用户
-    /// - `content_type`: MIME 类型（如 "image/png"）
+    /// iLink 上传协议完整流程：
+    /// 1. 生成随机 `filekey`（32 hex）和 `aeskey`（16 字节）
+    /// 2. 计算原始文件 MD5、大小
+    /// 3. AES-128-ECB + PKCS7 加密文件
+    /// 4. 调用 `getuploadurl` 获取 `upload_param`（CDN 上传凭证）
+    /// 5. POST 加密数据到固定 CDN `novac2c.cdn.weixin.qq.com/c2c/upload`
+    /// 6. 从响应头 `x-encrypted-param` 获取 `download_param`
     ///
-    /// 返回 (file_id, download_url)
+    /// 返回 (filekey, download_param, aes_key_hex)
     pub async fn upload_media(
         &self,
         data: &[u8],
         file_name: &str,
         media_type: i32,
         to_user_id: &str,
-        content_type: &str,
-    ) -> Result<(String, String)> {
-        // 1. 获取预签名上传 URL
+        _context_token: &str,
+        _content_type: &str,
+    ) -> Result<(String, String, String)> {
+        // 1. 生成随机 filekey 和 AES 密钥（在非 async 作用域中完成，避免 ThreadRng 跨 await）
+        let (filekey, aeskey_bytes, aeskey_hex) = {
+            let mut rng = rand::thread_rng();
+            let mut filekey_bytes = [0u8; 16];
+            rng.fill(&mut filekey_bytes);
+            let mut aeskey_bytes = [0u8; 16];
+            rng.fill(&mut aeskey_bytes);
+            (hex::encode(filekey_bytes), aeskey_bytes, hex::encode(aeskey_bytes))
+        };
+
+        // 2. 计算原始文件 MD5 和大小
+        let rawsize = data.len();
+        let rawfilemd5 = format!("{:x}", md5::compute(data));
+
+        // 3. AES-128-ECB + PKCS7 加密
+        let padded_size = ((rawsize / 16) + 1) * 16;
+        let mut buf = vec![0u8; padded_size];
+        buf[..rawsize].copy_from_slice(data);
+        let encrypted = Aes128EcbEnc::new(&aeskey_bytes.into())
+            .encrypt_padded_mut::<Pkcs7>(&mut buf, rawsize)
+            .map_err(|e| anyhow::anyhow!("AES 加密失败: {}", e))?
+            .to_vec();
+        let filesize = encrypted.len();
+
+        info!(
+            "媒体上传准备: file={} rawsize={} filesize={} md5={} filekey={}",
+            file_name, rawsize, filesize, rawfilemd5, filekey
+        );
+
+        // 4. 获取 upload_param（CDN 上传凭证）
         let upload_resp = self
-            .get_upload_url(file_name, media_type, to_user_id)
+            .get_upload_url(
+                &filekey,
+                &aeskey_hex,
+                media_type,
+                to_user_id,
+                rawsize as i64,
+                &rawfilemd5,
+                filesize as i64,
+            )
             .await?;
 
-        let upload_url = upload_resp
-            .upload_url
-            .ok_or_else(|| anyhow::anyhow!("未获取到上传 URL"))?;
-        let download_url = upload_resp
-            .download_url
-            .ok_or_else(|| anyhow::anyhow!("未获取到下载 URL"))?;
-        let file_id = upload_resp
-            .file_id
-            .ok_or_else(|| anyhow::anyhow!("未获取到 file_id"))?;
+        let upload_param = upload_resp.upload_param.ok_or_else(|| {
+            anyhow::anyhow!(
+                "getuploadurl 未返回 upload_param (ret={}, errcode={})",
+                upload_resp.ret,
+                upload_resp.errcode
+            )
+        })?;
 
-        // 2. 上传文件到预签名 URL（PUT）
-        let resp = self
-            .client
-            .put(&upload_url)
-            .header("Content-Type", content_type)
-            .body(data.to_vec())
-            .timeout(Duration::from_secs(60))
-            .send()
-            .await
-            .context("上传媒体文件失败")?;
+        // 5. POST 加密数据到固定 CDN 地址
+        let cdn_url = format!(
+            "https://novac2c.cdn.weixin.qq.com/c2c/upload?encrypted_query_param={}&filekey={}",
+            urlencoding::encode(&upload_param),
+            urlencoding::encode(&filekey)
+        );
 
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            anyhow::bail!("媒体上传失败 HTTP {}: {}", status, text);
+        info!(
+            "CDN 上传: filekey={} encrypted_size={} upload_param_len={} cdn_url_len={}",
+            filekey, encrypted.len(), upload_param.len(), cdn_url.len()
+        );
+        // 打印 URL 前缀方便排查格式问题
+        let url_preview: String = cdn_url.chars().take(200).collect();
+        info!("CDN URL 前缀: {}...", url_preview);
+
+        let mut last_error = String::from("CDN 上传失败（重试已耗尽）");
+        for attempt in 0..3u32 {
+            let resp = self
+                .client
+                .post(&cdn_url)
+                .header("Content-Type", "application/octet-stream")
+                .header("Content-Length", encrypted.len().to_string())
+                .body(encrypted.clone())
+                .timeout(Duration::from_secs(60))
+                .send()
+                .await;
+
+            match resp {
+                Ok(resp) => {
+                    let status = resp.status();
+                    if resp.status().is_client_error() {
+                        let headers = format!("{:?}", resp.headers());
+                        let text = resp.text().await.unwrap_or_default();
+                        warn!(
+                            "CDN 上传 4xx: status={} headers={} body='{}'",
+                            status, headers, text
+                        );
+                        anyhow::bail!("CDN 上传失败 HTTP {} (4xx 不可重试): {}", status, text);
+                    }
+
+                    if !resp.status().is_success() {
+                        let status = resp.status();
+                        last_error = format!("CDN 上传失败 HTTP {}", status);
+                        warn!("CDN 上传失败 (尝试 {}/3): HTTP {}", attempt + 1, status);
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        continue;
+                    }
+
+                    // 6. 从响应头获取 download_param
+                    let download_param = resp
+                        .headers()
+                        .get("x-encrypted-param")
+                        .and_then(|v| v.to_str().ok())
+                        .map(|s| s.to_string())
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("CDN 上传成功但未返回 x-encrypted-param 响应头")
+                        })?;
+
+                    debug!(
+                        "媒体上传成功: filekey={} aes_key={} download_param_len={}",
+                        filekey,
+                        aeskey_hex,
+                        download_param.len()
+                    );
+
+                    return Ok((filekey, download_param, aeskey_hex));
+                }
+                Err(e) => {
+                    last_error = format!("CDN 上传请求异常: {}", e);
+                    warn!("CDN 上传异常 (尝试 {}/3): {}", attempt + 1, e);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
         }
 
-        debug!("媒体上传成功: file_id={} url={}", file_id, download_url);
-        Ok((file_id, download_url))
+        anyhow::bail!("{}", last_error)
     }
 
     /// 获取 Bot 配置（typing_ticket 等）
@@ -541,23 +647,53 @@ impl ILinkAPI {
             .await
     }
 
-    /// 获取媒体上传预签名 URL
+    /// 获取媒体上传凭证 (upload_param)
+    ///
+    /// iLink 协议要求完整参数:
+    /// - `filekey`: 32 位随机 hex 字符串
+    /// - `aeskey`: AES-128 密钥的 hex 表示（注意字段名是 aeskey 不是 aeskey_hex）
+    /// - `media_type`: 1=图片, 2=视频, 3=文件, 4=语音
+    /// - `rawsize`: 原始文件大小（字节）
+    /// - `rawfilemd5`: 原始文件 MD5（32 位小写 hex）
+    /// - `filesize`: 加密后文件大小（AES-128-ECB + PKCS7）
+    ///
+    /// 注意: context_token 不在此 API 的 Body 中
     pub async fn get_upload_url(
         &self,
         filekey: &str,
+        aeskey_hex: &str,
         media_type: i32,
         to_user_id: &str,
+        rawsize: i64,
+        rawfilemd5: &str,
+        filesize: i64,
     ) -> Result<GetUploadUrlResponse> {
         let body = json!({
             "filekey": filekey,
+            "aeskey": aeskey_hex,
             "media_type": media_type,
             "to_user_id": to_user_id,
+            "rawsize": rawsize,
+            "rawfilemd5": rawfilemd5,
+            "filesize": filesize,
+            "no_need_thumb": true,
         });
 
         let value = self
             .post("ilink/bot/getuploadurl", body, DEFAULT_API_TIMEOUT_MS)
             .await?;
-        serde_json::from_value(value).context("解析 getuploadurl 响应失败")
+
+        let resp: GetUploadUrlResponse =
+            serde_json::from_value(value.clone()).context("解析 getuploadurl 响应失败")?;
+
+        if resp.ret != 0 || resp.errcode != 0 {
+            warn!(
+                "getuploadurl 返回错误: ret={} errcode={} resp={:?}",
+                resp.ret, resp.errcode, value
+            );
+        }
+
+        Ok(resp)
     }
 
     /// 更新 token

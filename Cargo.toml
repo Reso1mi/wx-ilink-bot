@@ -25,6 +25,15 @@ aes = "0.8"
 ecb = "0.1"
 block-padding = "0.3"
 
+# MD5 哈希
+md5 = "0.7"
+
+# 十六进制编解码
+hex = "0.4"
+
+# URL 编码
+urlencoding = "2"
+
 # Base64
 base64 = "0.22"
 

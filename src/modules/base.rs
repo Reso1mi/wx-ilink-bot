@@ -6,7 +6,7 @@ use crate::core::parser::ParsedMessage;
 /// 消息发送接口 — Bot 主类实现此 trait 供模块使用
 ///
 /// 支持发送文本、图片、文件、视频消息。
-/// 图片/文件/视频需要先上传获取 file_id 和 download_url，再调用对应的发送方法。
+/// 图片/文件/视频需要先上传到 CDN 获取 download_param，再调用对应的发送方法。
 /// 也可以使用 `upload_and_send_*` 快捷方法，一步完成上传+发送。
 #[async_trait]
 #[allow(dead_code)]
@@ -18,17 +18,16 @@ pub trait MessageSender: Send + Sync {
     async fn send_image(
         &self,
         to_user_id: &str,
-        file_id: &str,
-        download_url: &str,
-        aes_key: &str,
+        download_param: &str,
+        aes_key_hex: &str,
     ) -> Result<()>;
 
     /// 发送文件消息（已上传的媒体）
     async fn send_file(
         &self,
         to_user_id: &str,
-        file_id: &str,
-        download_url: &str,
+        download_param: &str,
+        aes_key_hex: &str,
         file_name: &str,
         file_size: i64,
     ) -> Result<()>;
@@ -37,8 +36,8 @@ pub trait MessageSender: Send + Sync {
     async fn send_video(
         &self,
         to_user_id: &str,
-        file_id: &str,
-        download_url: &str,
+        download_param: &str,
+        aes_key_hex: &str,
         video_size: i64,
         play_length: i64,
     ) -> Result<()>;

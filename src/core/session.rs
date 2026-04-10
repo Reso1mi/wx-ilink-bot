@@ -75,7 +75,7 @@ impl ContextTokenStore {
             .collect()
     }
 
-    /// 清除某个 account 的所有 token
+    /// 清除某个 account 的所有 token（仅内存 + context_token 文件）
     #[allow(dead_code)]
     pub async fn clear_account(&self, account_id: &str) {
         let prefix = format!("{}:", account_id);
@@ -85,6 +85,35 @@ impl ContextTokenStore {
         }
         let file_path = self.file_path(account_id);
         let _ = tokio::fs::remove_file(&file_path).await;
+    }
+
+    /// 彻底清理某个 account 的所有持久化文件
+    ///
+    /// 删除: {account_id}.json（凭证）、{account_id}.sync.json（同步游标）、
+    /// {account_id}.context-tokens.json（context_token）
+    /// 并从内存中清除相关 context_token
+    pub async fn cleanup_account(&self, account_id: &str) {
+        // 清除内存中的 context_token
+        let prefix = format!("{}:", account_id);
+        {
+            let mut store = self.store.write().await;
+            store.retain(|k, _| !k.starts_with(&prefix));
+        }
+
+        // 删除所有持久化文件
+        let cred_file = self.state_dir.join(format!("{}.json", account_id));
+        let sync_file = self.state_dir.join(format!("{}.sync.json", account_id));
+        let token_file = self.file_path(account_id);
+
+        for file in &[cred_file, sync_file, token_file] {
+            if file.exists() {
+                if let Err(e) = tokio::fs::remove_file(file).await {
+                    warn!("删除文件 {:?} 失败: {}", file, e);
+                } else {
+                    info!("已删除过期文件: {:?}", file);
+                }
+            }
+        }
     }
 
     /// 从磁盘恢复 context_token（服务启动时调用）

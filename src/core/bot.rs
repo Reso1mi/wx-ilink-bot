@@ -150,9 +150,8 @@ impl MessageSender for BotSender {
     async fn send_image(
         &self,
         to_user_id: &str,
-        file_id: &str,
-        download_url: &str,
-        aes_key: &str,
+        download_param: &str,
+        aes_key_hex: &str,
     ) -> Result<()> {
         let resolved = self.resolve_account(to_user_id).await?;
         resolved
@@ -161,14 +160,13 @@ impl MessageSender for BotSender {
             .send_image(
                 to_user_id,
                 &resolved.context_token,
-                file_id,
-                download_url,
-                aes_key,
+                download_param,
+                aes_key_hex,
             )
             .await?;
         info!(
-            "图片消息已发送: account={} to={} file_id={}",
-            resolved.account_id, to_user_id, file_id
+            "图片消息已发送: account={} to={}",
+            resolved.account_id, to_user_id
         );
         Ok(())
     }
@@ -176,8 +174,8 @@ impl MessageSender for BotSender {
     async fn send_file(
         &self,
         to_user_id: &str,
-        file_id: &str,
-        download_url: &str,
+        download_param: &str,
+        aes_key_hex: &str,
         file_name: &str,
         file_size: i64,
     ) -> Result<()> {
@@ -188,8 +186,8 @@ impl MessageSender for BotSender {
             .send_file(
                 to_user_id,
                 &resolved.context_token,
-                file_id,
-                download_url,
+                download_param,
+                aes_key_hex,
                 file_name,
                 file_size,
             )
@@ -204,8 +202,8 @@ impl MessageSender for BotSender {
     async fn send_video(
         &self,
         to_user_id: &str,
-        file_id: &str,
-        download_url: &str,
+        download_param: &str,
+        aes_key_hex: &str,
         video_size: i64,
         play_length: i64,
     ) -> Result<()> {
@@ -216,8 +214,8 @@ impl MessageSender for BotSender {
             .send_video(
                 to_user_id,
                 &resolved.context_token,
-                file_id,
-                download_url,
+                download_param,
+                aes_key_hex,
                 video_size,
                 play_length,
             )
@@ -237,10 +235,17 @@ impl MessageSender for BotSender {
         content_type: &str,
     ) -> Result<()> {
         let resolved = self.resolve_account(to_user_id).await?;
-        let (file_id, download_url) = resolved
+        let (_filekey, download_param, aes_key_hex) = resolved
             .account
             .api
-            .upload_media(data, file_name, 1, to_user_id, content_type)
+            .upload_media(
+                data,
+                file_name,
+                1, // media_type: 1=图片
+                to_user_id,
+                &resolved.context_token,
+                content_type,
+            )
             .await?;
         resolved
             .account
@@ -248,9 +253,8 @@ impl MessageSender for BotSender {
             .send_image(
                 to_user_id,
                 &resolved.context_token,
-                &file_id,
-                &download_url,
-                "",
+                &download_param,
+                &aes_key_hex,
             )
             .await?;
         info!(
@@ -269,10 +273,17 @@ impl MessageSender for BotSender {
     ) -> Result<()> {
         let resolved = self.resolve_account(to_user_id).await?;
         let file_size = data.len() as i64;
-        let (file_id, download_url) = resolved
+        let (_filekey, download_param, aes_key_hex) = resolved
             .account
             .api
-            .upload_media(data, file_name, 4, to_user_id, content_type)
+            .upload_media(
+                data,
+                file_name,
+                3, // media_type: 3=文件
+                to_user_id,
+                &resolved.context_token,
+                content_type,
+            )
             .await?;
         resolved
             .account
@@ -280,8 +291,8 @@ impl MessageSender for BotSender {
             .send_file(
                 to_user_id,
                 &resolved.context_token,
-                &file_id,
-                &download_url,
+                &download_param,
+                &aes_key_hex,
                 file_name,
                 file_size,
             )
@@ -303,10 +314,17 @@ impl MessageSender for BotSender {
     ) -> Result<()> {
         let resolved = self.resolve_account(to_user_id).await?;
         let video_size = data.len() as i64;
-        let (file_id, download_url) = resolved
+        let (_filekey, download_param, aes_key_hex) = resolved
             .account
             .api
-            .upload_media(data, file_name, 3, to_user_id, content_type)
+            .upload_media(
+                data,
+                file_name,
+                2, // media_type: 2=视频
+                to_user_id,
+                &resolved.context_token,
+                content_type,
+            )
             .await?;
         resolved
             .account
@@ -314,8 +332,8 @@ impl MessageSender for BotSender {
             .send_video(
                 to_user_id,
                 &resolved.context_token,
-                &file_id,
-                &download_url,
+                &download_param,
+                &aes_key_hex,
                 video_size,
                 play_length,
             )
@@ -359,9 +377,15 @@ impl WeixinBot {
     }
 
     /// 从磁盘恢复已保存的账号并启动长轮询
+    ///
+    /// 恢复时会验证每个账号的会话有效性：
+    /// - 通过一次轻量的 `get_updates` 调用检测会话状态
+    /// - 如果返回 `errcode == -14`（会话过期），自动删除该账号的所有持久化文件
+    /// - 只有会话有效的账号才会被注册并启动长轮询
     async fn restore_accounts(&self) -> usize {
         let state_dir = &self.config.state_dir;
         let mut restored = 0;
+        let mut expired = 0;
 
         // 扫描 state 目录中的 {account_id}.json 凭证文件
         let entries = match std::fs::read_dir(state_dir) {
@@ -372,23 +396,63 @@ impl WeixinBot {
             }
         };
 
-        for entry in entries.flatten() {
-            let file_name = entry.file_name();
-            let name = file_name.to_string_lossy();
+        // 先收集所有凭证文件，避免遍历期间修改目录
+        let account_files: Vec<String> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.ends_with(".json")
+                    && !name.ends_with(".sync.json")
+                    && !name.ends_with(".context-tokens.json")
+                {
+                    Some(name.trim_end_matches(".json").to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-            // 只匹配 xxx@im.bot.json 格式的凭证文件（跳过 .sync.json 和 .context-tokens.json）
-            if !name.ends_with(".json")
-                || name.ends_with(".sync.json")
-                || name.ends_with(".context-tokens.json")
-            {
-                continue;
-            }
-
-            let account_id = name.trim_end_matches(".json");
-
+        for account_id in &account_files {
             if let Some((bot_token, base_url, user_id)) =
                 self.ctx_store.restore_credentials(account_id).await
             {
+                info!(
+                    "正在验证账号会话: account_id={} user_id={}",
+                    account_id, user_id
+                );
+
+                // 创建临时 API 客户端验证会话
+                let api = ILinkAPI::new(
+                    Some(&base_url),
+                    Some(&bot_token),
+                    &self.config.app_id,
+                    &self.config.version,
+                );
+
+                // 恢复同步游标用于验证
+                let sync_buf = self.ctx_store.restore_sync_buf(account_id).await;
+
+                // 发一次轻量的 get_updates 检测会话是否有效
+                match api.get_updates(&sync_buf, Some(1_000)).await {
+                    Ok(resp) => {
+                        if resp.errcode == SESSION_EXPIRED_ERRCODE
+                            || resp.ret == SESSION_EXPIRED_ERRCODE
+                        {
+                            warn!(
+                                "账号 {} 会话已过期 (errcode={}, ret={})，清理持久化文件",
+                                account_id, resp.errcode, resp.ret
+                            );
+                            self.ctx_store.cleanup_account(account_id).await;
+                            expired += 1;
+                            continue;
+                        }
+                    }
+                    Err(e) => {
+                        // 网络错误等不确定情况，仍然尝试恢复
+                        warn!("验证账号 {} 会话时出错: {}，仍尝试恢复", account_id, e);
+                    }
+                }
+
                 info!("恢复账号: account_id={} user_id={}", account_id, user_id);
 
                 let scan_result = ScanResult {
@@ -404,6 +468,10 @@ impl WeixinBot {
                 self.spawn_account_poller(account_id).await;
                 restored += 1;
             }
+        }
+
+        if expired > 0 {
+            info!("已清理 {} 个过期会话", expired);
         }
 
         restored

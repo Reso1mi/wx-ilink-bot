@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>微信 iLink Bot 管理后台</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232730;
+    --border: #2e3340;
+    --text: #e4e6eb;
+    --text2: #8b8fa3;
+    --primary: #6366f1;
+    --primary-hover: #818cf8;
+    --green: #22c55e;
+    --green-bg: rgba(34,197,94,.12);
+    --red: #ef4444;
+    --red-bg: rgba(239,68,68,.12);
+    --yellow: #eab308;
+    --yellow-bg: rgba(234,179,8,.12);
+    --blue: #3b82f6;
+    --blue-bg: rgba(59,130,246,.12);
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  /* Header */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header h1 { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .header h1 span { font-size: 22px; }
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 500;
+  }
+  .status-online { background: var(--green-bg); color: var(--green); }
+  .status-offline { background: var(--red-bg); color: var(--red); }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .status-online .status-dot { background: var(--green); animation: pulse 2s infinite; }
+  .status-offline .status-dot { background: var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* Layout */
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+  /* Tabs */
+  .tabs {
+    display: flex; gap: 4px; background: var(--surface);
+    border-radius: var(--radius); padding: 4px; margin-bottom: 24px;
+  }
+  .tab {
+    flex: 1; padding: 10px 16px; text-align: center; border-radius: var(--radius-sm);
+    cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text2);
+    transition: all .2s; border: none; background: none;
+  }
+  .tab:hover { color: var(--text); background: var(--surface2); }
+  .tab.active { background: var(--primary); color: #fff; }
+
+  /* Cards */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 14px; color: var(--text2); margin-bottom: 12px;
+    text-transform: uppercase; letter-spacing: .5px; font-weight: 600;
+  }
+
+  /* Stats row */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .stat-value { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
+  .stat-label { font-size: 13px; color: var(--text2); }
+  .stat-card.green .stat-value { color: var(--green); }
+  .stat-card.blue .stat-value { color: var(--blue); }
+  .stat-card.yellow .stat-value { color: var(--yellow); }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; padding: 10px 14px; color: var(--text2); font-weight: 600; border-bottom: 1px solid var(--border); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+  td { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+  .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; color: var(--primary-hover); }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 20px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 500;
+    cursor: pointer; border: none; transition: all .2s;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn-outline:hover { border-color: var(--text2); background: var(--surface2); }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .btn-danger { background: var(--red); color: #fff; }
+
+  /* Form */
+  .form-group { margin-bottom: 16px; }
+  .form-label { display: block; font-size: 13px; color: var(--text2); margin-bottom: 6px; font-weight: 500; }
+  .form-input, .form-select, .form-textarea {
+    width: 100%; padding: 10px 14px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+    font-size: 14px; font-family: inherit; transition: border-color .2s;
+  }
+  .form-input:focus, .form-textarea:focus { outline: none; border-color: var(--primary); }
+  .form-textarea { resize: vertical; min-height: 80px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  /* QR Code */
+  .qr-container {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 30px; gap: 16px;
+  }
+  .qr-container img {
+    max-width: 240px; border-radius: var(--radius);
+    border: 2px solid var(--border);
+  }
+  .qr-status { font-size: 14px; color: var(--text2); display: flex; align-items: center; gap: 8px; }
+  .qr-status .spinner {
+    width: 16px; height: 16px; border: 2px solid var(--border);
+    border-top-color: var(--primary); border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Toast */
+  .toast-container { position: fixed; top: 76px; right: 24px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    padding: 12px 20px; border-radius: var(--radius-sm);
+    font-size: 14px; animation: slideIn .3s ease;
+    display: flex; align-items: center; gap: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  }
+  .toast-success { background: var(--green-bg); color: var(--green); border: 1px solid rgba(34,197,94,.2); }
+  .toast-error { background: var(--red-bg); color: var(--red); border: 1px solid rgba(239,68,68,.2); }
+  .toast-info { background: var(--blue-bg); color: var(--blue); border: 1px solid rgba(59,130,246,.2); }
+  @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } }
+
+  /* Sections */
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 40px; color: var(--text2); }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+  /* File input */
+  .file-drop {
+    border: 2px dashed var(--border); border-radius: var(--radius);
+    padding: 30px; text-align: center; cursor: pointer; transition: all .2s;
+    color: var(--text2); font-size: 14px;
+  }
+  .file-drop:hover, .file-drop.dragover { border-color: var(--primary); background: rgba(99,102,241,.05); }
+  .file-drop input { display: none; }
+  .file-info { margin-top: 8px; font-size: 13px; color: var(--primary-hover); }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .stats { grid-template-columns: 1fr; }
+    .form-row { grid-template-columns: 1fr; }
+    .tabs { flex-wrap: wrap; }
+    .container { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>🤖</span> 微信 iLink Bot</h1>
+  <div id="headerStatus" class="status-badge status-offline">
+    <div class="status-dot"></div>
+    <span>离线</span>
+  </div>
+</div>
+
+<div class="container">
+  <div class="tabs">
+    <button class="tab active" data-tab="dashboard">📊 仪表盘</button>
+    <button class="tab" data-tab="accounts">👤 账号管理</button>
+    <button class="tab" data-tab="users">👥 用户列表</button>
+    <button class="tab" data-tab="message">💬 发送消息</button>
+  </div>
+
+  <!-- 仪表盘 -->
+  <div id="sec-dashboard" class="section active">
+    <div class="stats">
+      <div class="stat-card green">
+        <div id="statOnline" class="stat-value">-</div>
+        <div class="stat-label">运行状态</div>
+      </div>
+      <div class="stat-card blue">
+        <div id="statAccounts" class="stat-value">0</div>
+        <div class="stat-label">在线账号数</div>
+      </div>
+      <div class="stat-card yellow">
+        <div id="statUsers" class="stat-value">0</div>
+        <div class="stat-label">已连接用户</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">账号概览</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>账号 ID</th><th>扫码用户</th></tr></thead>
+          <tbody id="dashAccountsBody"></tbody>
+        </table>
+      </div>
+      <div id="dashAccountsEmpty" class="empty" style="display:none">
+        <div class="empty-icon">📭</div>
+        <p>暂无账号，前往「账号管理」添加</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">API 端点</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>端点</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">GET /health</td><td>健康检查</td></tr>
+            <tr><td class="mono">GET /status</td><td>Bot 状态</td></tr>
+            <tr><td class="mono">GET /accounts</td><td>所有账号列表</td></tr>
+            <tr><td class="mono">GET /users</td><td>所有已连接用户</td></tr>
+            <tr><td class="mono">POST /account/add</td><td>同步添加账号</td></tr>
+            <tr><td class="mono">POST /account/qrcode</td><td>异步添加 Step 1 — 获取二维码</td></tr>
+            <tr><td class="mono">GET /account/status?qrcode=xxx</td><td>异步添加 Step 2 — 轮询状态</td></tr>
+            <tr><td class="mono">POST /message/send</td><td>发送文本消息</td></tr>
+            <tr><td class="mono">POST /message/send-file</td><td>上传并发送文件/图片/视频</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 账号管理 -->
+  <div id="sec-accounts" class="section">
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <div class="card-title" style="margin-bottom:0;">已注册账号</div>
+        <button class="btn btn-primary btn-sm" onclick="startAddAccount()">＋ 添加账号</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>账号 ID</th><th>扫码用户</th></tr></thead>
+          <tbody id="accountsBody"></tbody>
+        </table>
+      </div>
+      <div id="accountsEmpty" class="empty" style="display:none">
+        <div class="empty-icon">📭</div>
+        <p>暂无账号，点击上方按钮添加</p>
+      </div>
+    </div>
+
+    <!-- 二维码弹窗区 -->
+    <div id="qrSection" class="card" style="display:none;">
+      <div class="card-title">扫码添加账号</div>
+      <div class="qr-container">
+        <img id="qrImage" src="" alt="二维码" style="display:none">
+        <div id="qrLoading" class="qr-status"><div class="spinner"></div> 正在生成二维码...</div>
+        <div id="qrWaiting" class="qr-status" style="display:none"><div class="spinner"></div> 等待扫码...</div>
+        <div id="qrResult" style="display:none; text-align:center;"></div>
+        <button class="btn btn-outline btn-sm" onclick="cancelAddAccount()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 用户列表 -->
+  <div id="sec-users" class="section">
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <div class="card-title" style="margin-bottom:0;">已连接用户</div>
+        <button class="btn btn-outline btn-sm" onclick="loadUsers()">🔄 刷新</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>用户 ID</th><th>所属账号</th></tr></thead>
+          <tbody id="usersBody"></tbody>
+        </table>
+      </div>
+      <div id="usersEmpty" class="empty" style="display:none">
+        <div class="empty-icon">👻</div>
+        <p>暂无用户，用户给 Bot 发消息后会自动出现</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 发送消息 -->
+  <div id="sec-message" class="section">
+    <div class="card">
+      <div class="card-title">发送文本消息</div>
+      <div class="form-group">
+        <label class="form-label">目标用户 ID</label>
+        <input id="msgUserId" class="form-input" placeholder="xxx@im.wechat" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label">消息内容</label>
+        <textarea id="msgText" class="form-textarea" placeholder="输入消息内容..."></textarea>
+      </div>
+      <button class="btn btn-primary" onclick="sendTextMessage()">📤 发送文本</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">发送文件 / 图片 / 视频</div>
+      <div class="form-group">
+        <label class="form-label">目标用户 ID</label>
+        <input id="fileUserId" class="form-input" placeholder="xxx@im.wechat" autocomplete="off">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">消息类型</label>
+          <select id="fileType" class="form-input form-select">
+            <option value="">自动推断</option>
+            <option value="image">图片</option>
+            <option value="file">文件</option>
+            <option value="video">视频</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">视频时长（秒，仅视频）</label>
+          <input id="playLength" class="form-input" type="number" placeholder="0" value="0">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">选择文件</label>
+        <div id="fileDrop" class="file-drop" onclick="document.getElementById('fileInput').click()">
+          📎 点击选择文件，或拖拽到此处
+          <input type="file" id="fileInput" onchange="handleFileSelect(event)">
+          <div id="fileInfo" class="file-info"></div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="sendFileMessage()">📤 发送文件</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">快捷选择用户</div>
+      <div id="quickUsers" style="display:flex; flex-wrap:wrap; gap:8px;">
+        <span style="color:var(--text2); font-size:13px;">加载中...</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+const API = '';
+let qrPollTimer = null;
+let statusTimer = null;
+let selectedFile = null;
+
+// ========== Tab 切换 ==========
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('sec-' + tab.dataset.tab).classList.add('active');
+    // 切换时刷新对应数据
+    const t = tab.dataset.tab;
+    if (t === 'dashboard') loadDashboard();
+    else if (t === 'accounts') loadAccounts();
+    else if (t === 'users') loadUsers();
+    else if (t === 'message') loadQuickUsers();
+  });
+});
+
+// ========== Toast ==========
+function toast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+  el.innerHTML = `${icons[type] || ''} ${msg}`;
+  document.getElementById('toastContainer').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ========== API 请求 ==========
+async function api(path, opts = {}) {
+  try {
+    const resp = await fetch(API + path, opts);
+    return await resp.json();
+  } catch (e) {
+    toast('请求失败: ' + e.message, 'error');
+    return null;
+  }
+}
+
+// ========== 仪表盘 ==========
+async function loadDashboard() {
+  const [status, users] = await Promise.all([
+    api('/status'),
+    api('/users'),
+  ]);
+  if (!status) return;
+
+  // Header badge
+  const badge = document.getElementById('headerStatus');
+  badge.className = 'status-badge ' + (status.online ? 'status-online' : 'status-offline');
+  badge.querySelector('span').textContent = status.online ? '在线' : '离线';
+
+  // Stats
+  document.getElementById('statOnline').textContent = status.online ? '在线' : '离线';
+  document.getElementById('statAccounts').textContent = status.account_count || 0;
+
+  let totalUsers = 0;
+  if (users) totalUsers = users.total_users || 0;
+  document.getElementById('statUsers').textContent = totalUsers;
+
+  // Accounts table
+  const tbody = document.getElementById('dashAccountsBody');
+  const empty = document.getElementById('dashAccountsEmpty');
+  if (!status.accounts || status.accounts.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+  } else {
+    empty.style.display = 'none';
+    tbody.innerHTML = status.accounts.map(a =>
+      `<tr><td class="mono">${esc(a.account_id)}</td><td class="mono">${esc(a.user_id)}</td></tr>`
+    ).join('');
+  }
+}
+
+// ========== 账号管理 ==========
+async function loadAccounts() {
+  const data = await api('/accounts');
+  if (!data) return;
+  const tbody = document.getElementById('accountsBody');
+  const empty = document.getElementById('accountsEmpty');
+  if (!data.accounts || data.accounts.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+  } else {
+    empty.style.display = 'none';
+    tbody.innerHTML = data.accounts.map(a =>
+      `<tr><td class="mono">${esc(a.account_id)}</td><td class="mono">${esc(a.user_id)}</td></tr>`
+    ).join('');
+  }
+}
+
+async function startAddAccount() {
+  const sec = document.getElementById('qrSection');
+  sec.style.display = '';
+  document.getElementById('qrImage').style.display = 'none';
+  document.getElementById('qrLoading').style.display = 'flex';
+  document.getElementById('qrWaiting').style.display = 'none';
+  document.getElementById('qrResult').style.display = 'none';
+
+  const data = await api('/account/qrcode', { method: 'POST' });
+  document.getElementById('qrLoading').style.display = 'none';
+
+  if (!data || !data.success) {
+    toast('生成二维码失败: ' + (data?.error || '未知错误'), 'error');
+    sec.style.display = 'none';
+    return;
+  }
+
+  const img = document.getElementById('qrImage');
+  img.src = API + '/proxy/image?url=' + encodeURIComponent(data.qrcode_img_url);
+  img.style.display = '';
+  document.getElementById('qrWaiting').style.display = 'flex';
+
+  // 开始轮询
+  const qrcode = data.qrcode;
+  qrPollTimer = setInterval(async () => {
+    const st = await api('/account/status?qrcode=' + encodeURIComponent(qrcode));
+    if (!st) return;
+    if (st.status === 'confirmed') {
+      clearInterval(qrPollTimer);
+      qrPollTimer = null;
+      document.getElementById('qrWaiting').style.display = 'none';
+      document.getElementById('qrResult').style.display = '';
+      document.getElementById('qrResult').innerHTML =
+        `<div style="color:var(--green); font-size:18px; margin-bottom:8px;">✅ 添加成功</div>
+         <div style="font-size:13px; color:var(--text2);">
+           账号: <span class="mono">${esc(st.account_id)}</span><br>
+           用户: <span class="mono">${esc(st.user_id)}</span>
+         </div>`;
+      toast('账号添加成功', 'success');
+      loadAccounts();
+      loadDashboard();
+    } else if (st.status === 'expired' || st.status === 'error') {
+      clearInterval(qrPollTimer);
+      qrPollTimer = null;
+      document.getElementById('qrWaiting').style.display = 'none';
+      document.getElementById('qrResult').style.display = '';
+      document.getElementById('qrResult').innerHTML =
+        `<div style="color:var(--red);">❌ ${st.status === 'expired' ? '二维码已过期' : '出错了'}</div>`;
+      toast('二维码已过期，请重试', 'error');
+    }
+  }, 1500);
+}
+
+function cancelAddAccount() {
+  if (qrPollTimer) { clearInterval(qrPollTimer); qrPollTimer = null; }
+  document.getElementById('qrSection').style.display = 'none';
+}
+
+// ========== 用户列表 ==========
+async function loadUsers() {
+  const data = await api('/users');
+  if (!data) return;
+  const tbody = document.getElementById('usersBody');
+  const empty = document.getElementById('usersEmpty');
+  let rows = [];
+  if (data.accounts) {
+    data.accounts.forEach(acc => {
+      (acc.users || []).forEach(u => {
+        rows.push(`<tr><td class="mono">${esc(u.user_id)}</td><td class="mono">${esc(acc.account_id)}</td></tr>`);
+      });
+    });
+  }
+  if (rows.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+  } else {
+    empty.style.display = 'none';
+    tbody.innerHTML = rows.join('');
+  }
+}
+
+// ========== 发送消息 ==========
+async function sendTextMessage() {
+  const uid = document.getElementById('msgUserId').value.trim();
+  const text = document.getElementById('msgText').value.trim();
+  if (!uid || !text) { toast('请填写用户 ID 和消息内容', 'error'); return; }
+
+  const data = await api('/message/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to_user_id: uid, text }),
+  });
+  if (data?.success) {
+    toast('消息发送成功', 'success');
+    document.getElementById('msgText').value = '';
+  } else {
+    toast('发送失败: ' + (data?.error || '未知错误'), 'error');
+  }
+}
+
+// 文件选择
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  selectedFile = file;
+  document.getElementById('fileInfo').textContent =
+    `${file.name} (${formatSize(file.size)})`;
+  // 自动推断类型
+  const sel = document.getElementById('fileType');
+  if (!sel.value) {
+    if (file.type.startsWith('image/')) sel.value = 'image';
+    else if (file.type.startsWith('video/')) sel.value = 'video';
+    else sel.value = 'file';
+  }
+}
+
+// 拖拽上传
+const fileDrop = document.getElementById('fileDrop');
+fileDrop.addEventListener('dragover', e => { e.preventDefault(); fileDrop.classList.add('dragover'); });
+fileDrop.addEventListener('dragleave', () => fileDrop.classList.remove('dragover'));
+fileDrop.addEventListener('drop', e => {
+  e.preventDefault();
+  fileDrop.classList.remove('dragover');
+  if (e.dataTransfer.files.length) {
+    document.getElementById('fileInput').files = e.dataTransfer.files;
+    handleFileSelect({ target: { files: e.dataTransfer.files } });
+  }
+});
+
+async function sendFileMessage() {
+  const uid = document.getElementById('fileUserId').value.trim();
+  if (!uid) { toast('请填写用户 ID', 'error'); return; }
+  if (!selectedFile) { toast('请选择文件', 'error'); return; }
+
+  const form = new FormData();
+  form.append('to_user_id', uid);
+  form.append('file', selectedFile);
+  const fileType = document.getElementById('fileType').value;
+  if (fileType) form.append('type', fileType);
+  const pl = document.getElementById('playLength').value;
+  if (pl && fileType === 'video') form.append('play_length', pl);
+
+  toast('正在上传...', 'info');
+  const data = await api('/message/send-file', { method: 'POST', body: form });
+  if (data?.success) {
+    toast(`${data.type === 'image' ? '图片' : data.type === 'video' ? '视频' : '文件'}发送成功`, 'success');
+    selectedFile = null;
+    document.getElementById('fileInfo').textContent = '';
+    document.getElementById('fileInput').value = '';
+  } else {
+    toast('发送失败: ' + (data?.error || '未知错误'), 'error');
+  }
+}
+
+// 快捷选择用户
+async function loadQuickUsers() {
+  const data = await api('/users');
+  const el = document.getElementById('quickUsers');
+  let users = [];
+  if (data?.accounts) {
+    data.accounts.forEach(acc => {
+      (acc.users || []).forEach(u => users.push(u.user_id));
+    });
+  }
+  if (users.length === 0) {
+    el.innerHTML = '<span style="color:var(--text2); font-size:13px;">暂无用户</span>';
+    return;
+  }
+  el.innerHTML = users.map(uid =>
+    `<button class="btn btn-outline btn-sm" onclick="fillUserId('${esc(uid)}')">${esc(uid)}</button>`
+  ).join('');
+}
+
+function fillUserId(uid) {
+  document.getElementById('msgUserId').value = uid;
+  document.getElementById('fileUserId').value = uid;
+  toast('已选择: ' + uid, 'info');
+}
+
+// ========== 工具函数 ==========
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+// ========== 定时刷新 ==========
+function startAutoRefresh() {
+  loadDashboard();
+  statusTimer = setInterval(loadDashboard, 10000);
+}
+
+// 初始化
+startAutoRefresh();
+</script>
+</body>
+</html>
