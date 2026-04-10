@@ -1,11 +1,11 @@
+use axum::body::Body;
+use axum::http::{header, Response, StatusCode};
 use axum::{
     extract::{Multipart, Query, State},
     response::{Html, Json},
     routing::{get, post},
     Router,
 };
-use axum::body::Body;
-use axum::http::{header, Response, StatusCode};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -34,6 +34,8 @@ pub fn create_router(bot: SharedBot) -> Router {
         .route("/message/send-file", post(send_file_handler))
         // 图片代理（解决 HTTPS 二维码在 localhost 上无法加载的问题）
         .route("/proxy/image", get(proxy_image_handler))
+        // 二维码图片生成（后端渲染，不依赖前端 JS 库或外部 CDN）
+        .route("/qrcode/image", get(qrcode_image_handler))
         .with_state(bot)
 }
 
@@ -159,6 +161,7 @@ async fn account_qrcode_handler(State(bot): State<SharedBot>) -> Json<Value> {
             "success": true,
             "qrcode": qr.qrcode,
             "qrcode_img_url": qr.qrcode_img_url,
+            "qrcode_content": qr.qrcode_content,
         })),
         Err(e) => Json(json!({
             "success": false,
@@ -394,36 +397,30 @@ async fn proxy_image_handler(
 
     // 安全校验：只允许代理 HTTPS URL
     if !url.starts_with("https://") {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "仅支持代理 HTTPS URL".to_string(),
-        ));
+        return Err((StatusCode::BAD_REQUEST, "仅支持代理 HTTPS URL".to_string()));
     }
 
     // 限制域名为 iLink 相关（防止 SSRF）
-    let is_allowed = url.contains("weixin.qq.com")
-        || url.contains("wechat.com")
-        || url.contains("qq.com");
+    let is_allowed =
+        url.contains("weixin.qq.com") || url.contains("wechat.com") || url.contains("qq.com");
     if !is_allowed {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "不允许代理该域名".to_string(),
-        ));
+        return Err((StatusCode::FORBIDDEN, "不允许代理该域名".to_string()));
     }
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("创建 HTTP 客户端失败: {}", e)))?;
-
-    let resp = client
-        .get(url)
-        .send()
-        .await
         .map_err(|e| {
-            warn!("代理图片请求失败: {} - {}", url, e);
-            (StatusCode::BAD_GATEWAY, format!("请求远程图片失败: {}", e))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("创建 HTTP 客户端失败: {}", e),
+            )
         })?;
+
+    let resp = client.get(url).send().await.map_err(|e| {
+        warn!("代理图片请求失败: {} - {}", url, e);
+        (StatusCode::BAD_GATEWAY, format!("请求远程图片失败: {}", e))
+    })?;
 
     if !resp.status().is_success() {
         return Err((
@@ -450,5 +447,72 @@ async fn proxy_image_handler(
         .header(header::CONTENT_TYPE, content_type)
         .header(header::CACHE_CONTROL, "public, max-age=300")
         .body(Body::from(bytes.to_vec()))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("构建响应失败: {}", e)))
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("构建响应失败: {}", e),
+            )
+        })
+}
+
+/// 二维码图片查询参数
+#[derive(Deserialize)]
+struct QRCodeImageQuery {
+    /// 二维码内容（qrcode 标识符）
+    data: String,
+}
+
+/// 二维码图片生成 — 后端直接将字符串渲染成 QR Code PNG 图片
+///
+/// `GET /qrcode/image?data=xxx`
+///
+/// 不依赖前端 JS 库或外部 CDN，由后端 Rust 直接生成。
+async fn qrcode_image_handler(
+    Query(query): Query<QRCodeImageQuery>,
+) -> Result<Response<Body>, (StatusCode, String)> {
+    let data = &query.data;
+
+    if data.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "data 参数不能为空".to_string()));
+    }
+
+    // 生成 QR 码
+    let qr = qrcode::QrCode::new(data.as_bytes()).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("生成二维码失败: {}", e),
+        )
+    })?;
+
+    // 渲染为图片 (每个模块 10px, 安静区 2 模块)
+    let image = qr.render::<image::Luma<u8>>().quiet_zone(true).build();
+
+    // 编码为 PNG
+    let mut png_bytes: Vec<u8> = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+    image::ImageEncoder::write_image(
+        encoder,
+        image.as_raw(),
+        image.width(),
+        image.height(),
+        image::ExtendedColorType::L8,
+    )
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("编码 PNG 失败: {}", e),
+        )
+    })?;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "image/png")
+        .header(header::CACHE_CONTROL, "no-cache")
+        .body(Body::from(png_bytes))
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("构建响应失败: {}", e),
+            )
+        })
 }

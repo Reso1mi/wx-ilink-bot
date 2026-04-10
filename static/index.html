@@ -475,9 +475,28 @@ async function startAddAccount() {
     return;
   }
 
+  // 使用后端 /qrcode/image 端点生成 QR 码 PNG（不依赖外部 CDN 或 JS 库）
+  const qrContent = data.qrcode_content || data.qrcode || '';
+  console.log('QR 数据:', JSON.stringify({qrcode: data.qrcode, qrcode_content: data.qrcode_content, qrcode_img_url: data.qrcode_img_url}));
+  if (!qrContent) {
+    toast('二维码内容为空', 'error');
+    sec.style.display = 'none';
+    return;
+  }
+
   const img = document.getElementById('qrImage');
-  img.src = API + '/proxy/image?url=' + encodeURIComponent(data.qrcode_img_url);
+  const imgUrl = API + '/qrcode/image?data=' + encodeURIComponent(qrContent);
+  console.log('QR 图片 URL:', imgUrl);
+  img.onerror = function() {
+    console.error('QR 码图片加载失败, src:', img.src);
+    toast('二维码图片加载失败', 'error');
+  };
+  img.onload = function() {
+    console.log('QR 码图片加载成功, size:', img.naturalWidth, 'x', img.naturalHeight);
+  };
+  img.src = imgUrl;
   img.style.display = '';
+
   document.getElementById('qrWaiting').style.display = 'flex';
 
   // 开始轮询
@@ -514,6 +533,7 @@ async function startAddAccount() {
 function cancelAddAccount() {
   if (qrPollTimer) { clearInterval(qrPollTimer); qrPollTimer = null; }
   document.getElementById('qrSection').style.display = 'none';
+  document.getElementById('qrImage').style.display = 'none';
 }
 
 // ========== 用户列表 ==========

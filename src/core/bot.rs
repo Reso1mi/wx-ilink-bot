@@ -679,13 +679,35 @@ impl WeixinBot {
 
         let qr_data = api.get_bot_qrcode("3").await?;
         let qrcode = qr_data.qrcode.unwrap_or_default();
-        let qrcode_img_url = qr_data.qrcode_img_content.unwrap_or_default();
+        let qrcode_img_content = qr_data.qrcode_img_content.unwrap_or_default();
 
-        info!("账号绑定二维码已生成: {}", qrcode_img_url);
+        // qrcode: 二维码标识符/内容，同时用于轮询状态和 JS QR 库本地渲染
+        // qrcode_img_content: 可能是图片 URL（如果以 https:// 开头），可通过 proxy 加载
+        info!(
+            "账号绑定二维码已生成: qrcode={} qrcode_img_content={}",
+            qrcode,
+            if qrcode_img_content.len() > 60 {
+                format!(
+                    "{}... (len={})",
+                    &qrcode_img_content[..60],
+                    qrcode_img_content.len()
+                )
+            } else {
+                qrcode_img_content.clone()
+            }
+        );
 
         Ok(BindQRCode {
-            qrcode,
-            qrcode_img_url,
+            qrcode: qrcode.clone(),
+            // qrcode_img_content 如果是 HTTPS URL，可以通过 proxy 加载
+            qrcode_img_url: qrcode_img_content.clone(),
+            // qrcode_img_content 是扫码内容（如 https://liteapp.weixin.qq.com/q/...），
+            // 需要被编码为 QR 码展示给用户扫码
+            qrcode_content: if qrcode_img_content.is_empty() {
+                qrcode
+            } else {
+                qrcode_img_content
+            },
         })
     }
 
@@ -934,8 +956,13 @@ pub struct AddAccountResult {
 /// 二维码信息
 #[derive(Debug, Clone)]
 pub struct BindQRCode {
+    /// 二维码标识（用于轮询扫码状态）
     pub qrcode: String,
+    /// 二维码图片 URL（HTTPS，可通过 proxy 加载）
+    /// 注意: 这是 qrcode 字段本身，格式为 https://ilinkai.weixin.qq.com/ilink/bot/qrcode?...
     pub qrcode_img_url: String,
+    /// 二维码原始内容字符串（可用于前端 JS 库本地生成二维码）
+    pub qrcode_content: String,
 }
 
 /// 扫码状态轮询结果

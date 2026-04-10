@@ -58,3 +58,7 @@ thiserror = "2"
 
 # HTTP 服务（管理接口）
 axum = { version = "0.8", features = ["multipart"] }
+
+# 二维码生成
+qrcode = "0.14"
+image = "0.25"
