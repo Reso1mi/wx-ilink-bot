@@ -88,8 +88,7 @@ impl QRCodeManager {
         let mut current_base_url = self.api.base_url.clone();
 
         // 更新当前二维码状态
-        self.update_qr_status(&qrcode, &qrcode_url, "waiting")
-            .await;
+        self.update_qr_status(&qrcode, &qrcode_url, "waiting").await;
 
         info!("新二维码已生成: {}", qrcode_url);
 
@@ -105,8 +104,7 @@ impl QRCodeManager {
                     // 继续轮询
                 }
                 "scaned" => {
-                    self.update_qr_status(&qrcode, &qrcode_url, "scaned")
-                        .await;
+                    self.update_qr_status(&qrcode, &qrcode_url, "scaned").await;
                     info!("二维码已被扫描，等待确认...");
                 }
                 "scaned_but_redirect" => {
@@ -136,8 +134,7 @@ impl QRCodeManager {
                     let new_qr = self.api.get_bot_qrcode("3").await?;
                     qrcode = new_qr.qrcode.unwrap_or_default();
                     qrcode_url = new_qr.qrcode_img_content.unwrap_or_default();
-                    self.update_qr_status(&qrcode, &qrcode_url, "waiting")
-                        .await;
+                    self.update_qr_status(&qrcode, &qrcode_url, "waiting").await;
                     info!("新二维码: {}", qrcode_url);
                 }
                 "confirmed" => {

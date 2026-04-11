@@ -15,6 +15,14 @@ pub struct AppConfig {
     pub version: String,
     /// HTTP 管理接口端口
     pub http_port: u16,
+    /// XHS-Downloader API 地址
+    pub xhs_api_url: String,
+    /// 小红书请求 Cookie（可选）
+    pub xhs_cookie: String,
+    /// 小红书请求代理（可选）
+    pub xhs_proxy: String,
+    /// XHS-Downloader API 超时时间（毫秒）
+    pub xhs_timeout_ms: u64,
 }
 
 impl Default for AppConfig {
@@ -26,6 +34,10 @@ impl Default for AppConfig {
             app_id: "bot".to_string(),
             version: "1.0.0".to_string(),
             http_port: 3000,
+            xhs_api_url: "http://127.0.0.1:5556".to_string(),
+            xhs_cookie: String::new(),
+            xhs_proxy: String::new(),
+            xhs_timeout_ms: 60_000,
         }
     }
 }
@@ -47,6 +59,14 @@ impl AppConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(3000),
+            xhs_api_url: env::var("BOT_XHS_API_URL")
+                .unwrap_or_else(|_| "http://127.0.0.1:5556".to_string()),
+            xhs_cookie: env::var("BOT_XHS_COOKIE").unwrap_or_default(),
+            xhs_proxy: env::var("BOT_XHS_PROXY").unwrap_or_default(),
+            xhs_timeout_ms: env::var("BOT_XHS_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(60_000),
         }
     }
 }

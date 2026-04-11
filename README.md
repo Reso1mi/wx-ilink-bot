@@ -43,6 +43,7 @@ iLink Bot 是腾讯通过 OpenClaw 框架正式开放的合法 Bot API，基于 
 - 📝 **消息解析** — 支持文本/图片/语音/文件/视频 5 种消息类型
 - 🔀 **智能路由** — 前缀/精确/正则/包含/类型 多种匹配方式
 - 📤 **精准回复** — 通过 `to_user_id` + `context_token` 回复指定用户
+- 🪄 **小红书去水印** — 自动识别小红书链接并回传无水印图片/视频（基于 `XHS-Downloader`）
 - 🔌 **可插拔模块** — 业务逻辑完全解耦，3 步新增功能模块
 - 💾 **状态持久化** — context_token / 同步游标 / 凭证自动持久化
 - 🛡️ **容错设计** — 会话过期处理、连续失败退避、自动重连
@@ -91,7 +92,8 @@ docker compose up -d --build
 启动后：
 1. 管理后台默认地址为 `http://localhost:3000/admin`
 2. 容器内状态目录固定为 `/app/state`
-3. 宿主机 `./state` 会挂载到容器内，重启容器不会丢失状态
+3. `XHS-Downloader` API 默认暴露在 `http://localhost:5556/docs`
+4. 宿主机 `./state` 会挂载到容器内，重启容器不会丢失状态
 
 如果你不需要自定义配置，也可以跳过 `cp .env.example .env`，Compose 会直接使用内置默认值。
 
@@ -123,6 +125,8 @@ docker run -d \
 
 如需自定义环境变量，可在 `docker run` 后额外加上 `--env-file .env`。
 
+> 注意：上面的 `docker run` 只会启动 bot 本体；如果需要小红书去水印功能，还需要单独启动一个 `XHS-Downloader` API 服务，并将 `BOT_XHS_API_URL` 指向该服务。
+
 ### 配置
 
 编辑 `.env` 文件：
@@ -135,6 +139,27 @@ docker run -d \
 | `BOT_APP_ID` | App ID | `bot` |
 | `BOT_VERSION` | 客户端版本号 | `1.0.0` |
 | `BOT_HTTP_PORT` | HTTP 管理接口端口 | `3000` |
+| `BOT_XHS_API_URL` | `XHS-Downloader` API 地址 | `http://127.0.0.1:5556` |
+| `BOT_XHS_API_PORT` | `XHS-Downloader` 对外暴露端口（Compose） | `5556` |
+| `BOT_XHS_COOKIE` | 小红书请求 Cookie（可选） | 空 |
+| `BOT_XHS_PROXY` | 小红书请求代理（可选） | 空 |
+| `BOT_XHS_TIMEOUT_MS` | `XHS-Downloader` API 超时时间（毫秒） | `60000` |
+
+### 小红书去水印
+
+直接给 Bot 发送以下任意一种链接，即可自动触发去水印流程：
+
+- `https://www.xiaohongshu.com/explore/...`
+- `https://www.xiaohongshu.com/discovery/item/...`
+- `https://www.xiaohongshu.com/user/profile/.../...`
+- `https://xhslink.com/...`
+
+处理逻辑：
+
+- 图文/图集作品：逐张回发无水印图片
+- 视频作品：优先回发视频消息，若平台侧发送失败则自动回退为文件发送
+
+> `XHS-Downloader` 官方说明中提到：未配置 Cookie 时，视频作品可能只能获取较低分辨率文件；如遇解析或清晰度问题，建议在 `.env` 中配置 `BOT_XHS_COOKIE`。
 
 ## HTTP 管理接口
 
@@ -199,13 +224,15 @@ src/
 │   ├── bot.rs              # Bot 主类 — 多账号管理、长轮询
 │   ├── parser.rs           # 消息解析器
 │   ├── router.rs           # 消息路由器
-│   └── session.rs          # context_token 存储
+│   ├── session.rs          # context_token 存储
+│   └── xhs_client.rs       # XHS-Downloader API 客户端
 │
 ├── modules/                # 业务模块层
 │   ├── base.rs             # ModuleHandler trait
 │   ├── echo_module.rs      # 回声模块
 │   ├── query_module.rs     # 查询模块
 │   ├── notify_module.rs    # 通知模块
+│   ├── xhs_module.rs       # 小红书去水印模块
 │   └── help_module.rs      # 帮助模块
 │
 └── utils/

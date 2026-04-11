@@ -189,10 +189,7 @@ impl MessageParser {
 
     /// 提取文本内容
     fn extract_text(item: &Value) -> String {
-        item["text_item"]["text"]
-            .as_str()
-            .unwrap_or("")
-            .to_string()
+        item["text_item"]["text"].as_str().unwrap_or("").to_string()
     }
 
     /// 提取引用消息文本
@@ -250,10 +247,7 @@ impl MessageParser {
     fn extract_file_info(item: &Value) -> MediaInfo {
         let file_item = &item["file_item"];
         Self::extract_cdn_media(&file_item["media"], |info| {
-            info.file_name = file_item["file_name"]
-                .as_str()
-                .unwrap_or("")
-                .to_string();
+            info.file_name = file_item["file_name"].as_str().unwrap_or("").to_string();
             info.md5 = file_item["md5"].as_str().unwrap_or("").to_string();
             info.size = file_item["len"]
                 .as_str()

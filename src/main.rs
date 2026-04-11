@@ -9,10 +9,12 @@ use std::sync::Arc;
 use config::AppConfig;
 use core::bot::WeixinBot;
 use core::router::{MatchType, RouteRule};
+use core::xhs_client::{XhsClientConfig, XHS_LINK_PATTERN};
 use modules::echo_module::EchoModule;
 use modules::help_module::HelpModule;
 use modules::notify_module::NotifyModule;
 use modules::query_module::QueryModule;
+use modules::xhs_module::XhsModule;
 
 #[tokio::main]
 async fn main() {
@@ -26,6 +28,12 @@ async fn main() {
     tracing::info!("状态目录: {}", config.state_dir);
 
     let http_port = config.http_port;
+    let xhs_config = XhsClientConfig::new(
+        config.xhs_api_url.clone(),
+        config.xhs_cookie.clone(),
+        config.xhs_proxy.clone(),
+        config.xhs_timeout_ms,
+    );
 
     // 3. 创建 Bot 实例并注册业务模块
     let mut bot = WeixinBot::new(config);
@@ -42,12 +50,17 @@ async fn main() {
         RouteRule::new("notify", "通知", MatchType::Prefix),
         Arc::new(NotifyModule::new()),
     );
+    bot.router.register(
+        RouteRule::new("xhs_link", XHS_LINK_PATTERN, MatchType::RegexMatch),
+        Arc::new(XhsModule::new(xhs_config).expect("初始化 XhsModule 失败")),
+    );
 
     // 4. 设置默认处理器（未匹配时触发）
     bot.router.set_default(Arc::new(HelpModule::new(vec![
         ("回声 <内容>", "原样返回你的消息"),
         ("查询 <关键词>", "查询信息"),
         ("通知 <用户ID> <内容>", "向指定用户发送通知"),
+        ("直接发送小红书链接", "自动提取并返回无水印图片/视频"),
     ])));
 
     // 5. 包装为 Arc 共享
