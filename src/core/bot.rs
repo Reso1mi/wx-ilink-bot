@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
@@ -55,6 +55,8 @@ pub struct WeixinBot {
     ctx_store: ContextTokenStore,
     /// 所有已注册的账号 (account_id → Account)
     accounts: Arc<RwLock<HashMap<String, Arc<Account>>>>,
+    /// 已启动长轮询的账号集合，避免重复启动同一账号的 poller
+    active_pollers: Arc<RwLock<HashSet<String>>>,
     /// 运行状态
     running: Arc<RwLock<bool>>,
     /// 应用配置
@@ -123,8 +125,7 @@ impl BotSender {
         }
 
         anyhow::bail!(
-            "无法发送消息给 {}: 所有账号中均未找到该用户的 context_token，该用户可能从未给 Bot 发过消息",
-            to_user_id
+            "无法发送消息给 {to_user_id}: 所有账号中均未找到该用户的 context_token，该用户可能从未给 Bot 发过消息"
         )
     }
 }
@@ -355,6 +356,7 @@ impl WeixinBot {
             router: MessageRouter::new(),
             ctx_store,
             accounts: Arc::new(RwLock::new(HashMap::new())),
+            active_pollers: Arc::new(RwLock::new(HashSet::new())),
             running: Arc::new(RwLock::new(true)),
             config,
         }
@@ -464,9 +466,10 @@ impl WeixinBot {
                     error: None,
                 };
 
-                self.register_account(&scan_result).await;
-                self.spawn_account_poller(account_id).await;
-                restored += 1;
+                if self.register_account(&scan_result).await {
+                    self.spawn_account_poller(account_id).await;
+                    restored += 1;
+                }
             }
         }
 
@@ -478,7 +481,18 @@ impl WeixinBot {
     }
 
     /// 注册一个新账号（扫码成功后调用）
-    async fn register_account(&self, result: &ScanResult) {
+    async fn register_account(&self, result: &ScanResult) -> bool {
+        {
+            let accounts = self.accounts.read().await;
+            if accounts.contains_key(&result.account_id) {
+                info!(
+                    "账号已存在，跳过重复注册: account_id={} user_id={}",
+                    result.account_id, result.user_id
+                );
+                return false;
+            }
+        }
+
         let api = ILinkAPI::new(
             Some(&result.base_url),
             Some(&result.bot_token),
@@ -512,6 +526,13 @@ impl WeixinBot {
         // 注册到账号表
         {
             let mut accounts = self.accounts.write().await;
+            if accounts.contains_key(&result.account_id) {
+                info!(
+                    "账号已存在，跳过重复注册: account_id={} user_id={}",
+                    result.account_id, result.user_id
+                );
+                return false;
+            }
             accounts.insert(result.account_id.clone(), Arc::clone(&account));
         }
 
@@ -519,6 +540,8 @@ impl WeixinBot {
             "账号已注册: account_id={} user_id={}",
             result.account_id, result.user_id
         );
+
+        true
     }
 
     // ==================== 消息发送 ====================
@@ -641,10 +664,10 @@ impl WeixinBot {
 
         if scan_result.success {
             // 注册新账号
-            self.register_account(&scan_result).await;
-
-            // 启动该账号的长轮询
-            self.spawn_account_poller(&scan_result.account_id).await;
+            if self.register_account(&scan_result).await {
+                // 启动该账号的长轮询
+                self.spawn_account_poller(&scan_result.account_id).await;
+            }
 
             info!(
                 "新账号添加成功: account_id={} user_id={}",
@@ -751,8 +774,9 @@ impl WeixinBot {
                 user_id: user_id.clone(),
                 error: None,
             };
-            self.register_account(&scan_result).await;
-            self.spawn_account_poller(&account_id).await;
+            if self.register_account(&scan_result).await {
+                self.spawn_account_poller(&account_id).await;
+            }
 
             result.account_id = Some(account_id);
             result.user_id = Some(user_id);
@@ -765,11 +789,21 @@ impl WeixinBot {
 
     /// 为指定账号启动长轮询（在独立 tokio 任务中运行）
     async fn spawn_account_poller(&self, account_id: &str) {
+        {
+            let mut active_pollers = self.active_pollers.write().await;
+            if !active_pollers.insert(account_id.to_string()) {
+                info!("长轮询已在运行，跳过重复启动: account_id={account_id}");
+                return;
+            }
+        }
+
         let account = {
             let accounts = self.accounts.read().await;
             match accounts.get(account_id) {
                 Some(acc) => Arc::clone(acc),
                 None => {
+                    let mut active_pollers = self.active_pollers.write().await;
+                    active_pollers.remove(account_id);
                     error!("无法启动长轮询: 账号 {} 不存在", account_id);
                     return;
                 }
@@ -781,6 +815,7 @@ impl WeixinBot {
         let parser = MessageParser::new();
         let router = self.router.clone();
         let accounts_ref = Arc::clone(&self.accounts);
+        let active_pollers = Arc::clone(&self.active_pollers);
 
         let account_id_owned = account_id.to_string();
 
@@ -917,6 +952,10 @@ impl WeixinBot {
                 }
             }
 
+            {
+                let mut active_pollers = active_pollers.write().await;
+                active_pollers.remove(&account_id_owned);
+            }
             info!("[{}] 长轮询已停止", account_id_owned);
         });
     }

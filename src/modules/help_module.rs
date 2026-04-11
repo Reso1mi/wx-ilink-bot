@@ -26,7 +26,7 @@ impl ModuleHandler for HelpModule {
         let mut help_text = String::from("🤖 可用命令:\n\n");
 
         for (cmd, desc) in &self.commands {
-            help_text.push_str(&format!("  {} — {}\n", cmd, desc));
+            help_text.push_str(&format!("  {cmd} — {desc}\n"));
         }
 
         help_text.push_str("\n发送对应命令即可使用");

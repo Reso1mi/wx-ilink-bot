@@ -147,7 +147,7 @@ async fn add_account_handler(State(bot): State<SharedBot>) -> Json<Value> {
         }
         Err(e) => Json(json!({
             "success": false,
-            "error": format!("添加账号异常: {}", e),
+            "error": format!("添加账号异常: {e}"),
         })),
     }
 }
@@ -165,7 +165,7 @@ async fn account_qrcode_handler(State(bot): State<SharedBot>) -> Json<Value> {
         })),
         Err(e) => Json(json!({
             "success": false,
-            "error": format!("生成二维码失败: {}", e),
+            "error": format!("生成二维码失败: {e}"),
         })),
     }
 }
@@ -191,7 +191,7 @@ async fn account_status_handler(
         })),
         Err(e) => Json(json!({
             "status": "error",
-            "error": format!("查询状态失败: {}", e),
+            "error": format!("查询状态失败: {e}"),
         })),
     }
 }
@@ -199,13 +199,13 @@ async fn account_status_handler(
 /// 启动 HTTP 服务
 pub async fn start_http_server(bot: SharedBot, port: u16) {
     let app = create_router(bot);
-    let addr = format!("0.0.0.0:{}", port);
+    let addr = format!("0.0.0.0:{port}");
 
     info!("HTTP 管理接口启动: http://localhost:{}", port);
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .unwrap_or_else(|_| panic!("无法绑定端口 {}", port));
+        .unwrap_or_else(|_| panic!("无法绑定端口 {port}"));
 
     axum::serve(listener, app).await.expect("HTTP 服务异常退出");
 }
@@ -246,7 +246,7 @@ async fn send_message_handler(
         })),
         Err(e) => Json(json!({
             "success": false,
-            "error": format!("{}", e),
+            "error": format!("{e}"),
         })),
     }
 }
@@ -293,7 +293,7 @@ async fn send_file_handler(State(bot): State<SharedBot>, mut multipart: Multipar
                     Err(e) => {
                         return Json(json!({
                             "success": false,
-                            "error": format!("读取文件失败: {}", e),
+                            "error": format!("读取文件失败: {e}"),
                         }));
                     }
                 }
@@ -362,7 +362,7 @@ async fn send_file_handler(State(bot): State<SharedBot>, mut multipart: Multipar
         })),
         Err(e) => Json(json!({
             "success": false,
-            "error": format!("{}", e),
+            "error": format!("{e}"),
         })),
     }
 }
@@ -413,13 +413,13 @@ async fn proxy_image_handler(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("创建 HTTP 客户端失败: {}", e),
+                format!("创建 HTTP 客户端失败: {e}"),
             )
         })?;
 
     let resp = client.get(url).send().await.map_err(|e| {
         warn!("代理图片请求失败: {} - {}", url, e);
-        (StatusCode::BAD_GATEWAY, format!("请求远程图片失败: {}", e))
+        (StatusCode::BAD_GATEWAY, format!("请求远程图片失败: {e}"))
     })?;
 
     if !resp.status().is_success() {
@@ -440,7 +440,7 @@ async fn proxy_image_handler(
     let bytes = resp
         .bytes()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("读取图片内容失败: {}", e)))?;
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("读取图片内容失败: {e}")))?;
 
     Response::builder()
         .status(StatusCode::OK)
@@ -450,7 +450,7 @@ async fn proxy_image_handler(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("构建响应失败: {}", e),
+                format!("构建响应失败: {e}"),
             )
         })
 }
@@ -480,7 +480,7 @@ async fn qrcode_image_handler(
     let qr = qrcode::QrCode::new(data.as_bytes()).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("生成二维码失败: {}", e),
+            format!("生成二维码失败: {e}"),
         )
     })?;
 
@@ -500,7 +500,7 @@ async fn qrcode_image_handler(
     .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("编码 PNG 失败: {}", e),
+            format!("编码 PNG 失败: {e}"),
         )
     })?;
 
@@ -512,7 +512,7 @@ async fn qrcode_image_handler(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("构建响应失败: {}", e),
+                format!("构建响应失败: {e}"),
             )
         })
 }

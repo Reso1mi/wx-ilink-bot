@@ -80,8 +80,8 @@ impl XhsModule {
 
         let summary = match success {
             0 => "图片下载或发送失败，请稍后重试。".to_string(),
-            value if value == total => format!("已发送完成，共返回 {} 张无水印图片。", total),
-            value => format!("已返回 {}/{} 张图片，部分图片处理失败。", value, total),
+            value if value == total => format!("已发送完成，共返回 {total} 张无水印图片。"),
+            value => format!("已返回 {value}/{total} 张图片，部分图片处理失败。"),
         };
 
         reply(sender, msg, &summary).await
@@ -165,7 +165,7 @@ impl ModuleHandler for XhsModule {
                     "处理小红书链接失败: user={} link={} error={}",
                     msg.user_id, link, error
                 );
-                reply(sender, msg, &format!("解析小红书链接失败: {}", error)).await?;
+                reply(sender, msg, &format!("解析小红书链接失败: {error}")).await?;
             }
         }
 

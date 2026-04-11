@@ -38,10 +38,10 @@ impl ModuleHandler for NotifyModule {
         .await
         {
             Ok(_) => {
-                reply(sender, msg, &format!("✅ 已通知 {}", target_user_id)).await?;
+                reply(sender, msg, &format!("✅ 已通知 {target_user_id}")).await?;
             }
             Err(e) => {
-                reply(sender, msg, &format!("❌ 通知失败: {}", e)).await?;
+                reply(sender, msg, &format!("❌ 通知失败: {e}")).await?;
             }
         }
 

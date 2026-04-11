@@ -38,8 +38,7 @@ impl RouteRule {
     pub fn new(name: &str, pattern: &str, match_type: MatchType) -> Self {
         let compiled_regex = match &match_type {
             MatchType::RegexMatch => Some(
-                Regex::new(pattern)
-                    .unwrap_or_else(|e| panic!("无效的正则表达式 '{}': {}", pattern, e)),
+                Regex::new(pattern).unwrap_or_else(|e| panic!("无效的正则表达式 '{pattern}': {e}")),
             ),
             _ => None,
         };

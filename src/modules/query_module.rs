@@ -25,7 +25,7 @@ impl ModuleHandler for QueryModule {
 
         // 执行查询逻辑（此处为示例实现）
         let result = self.do_query(&keyword).await;
-        let response = format!("📋 查询结果:\n{}", result);
+        let response = format!("📋 查询结果:\n{result}");
         reply(sender, msg, &response).await
     }
 
@@ -38,6 +38,6 @@ impl QueryModule {
     /// 实际查询逻辑（替换为你的业务代码）
     async fn do_query(&self, keyword: &str) -> String {
         // 示例: 调用外部 API、查数据库等
-        format!("关于 '{}' 的查询结果...", keyword)
+        format!("关于 '{keyword}' 的查询结果...")
     }
 }

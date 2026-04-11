@@ -32,13 +32,13 @@ impl ContextTokenStore {
 
     /// 生成存储 key
     fn key(account_id: &str, user_id: &str) -> String {
-        format!("{}:{}", account_id, user_id)
+        format!("{account_id}:{user_id}")
     }
 
     /// 获取持久化文件路径
     fn file_path(&self, account_id: &str) -> PathBuf {
         self.state_dir
-            .join(format!("{}.context-tokens.json", account_id))
+            .join(format!("{account_id}.context-tokens.json"))
     }
 
     /// 存储 context_token（内存 + 磁盘）
@@ -66,7 +66,7 @@ impl ContextTokenStore {
     /// 获取某个 account 下所有用户的 context_token
     #[allow(dead_code)]
     pub async fn get_all_users(&self, account_id: &str) -> HashMap<String, String> {
-        let prefix = format!("{}:", account_id);
+        let prefix = format!("{account_id}:");
         let store = self.store.read().await;
         store
             .iter()
@@ -78,7 +78,7 @@ impl ContextTokenStore {
     /// 清除某个 account 的所有 token（仅内存 + context_token 文件）
     #[allow(dead_code)]
     pub async fn clear_account(&self, account_id: &str) {
-        let prefix = format!("{}:", account_id);
+        let prefix = format!("{account_id}:");
         {
             let mut store = self.store.write().await;
             store.retain(|k, _| !k.starts_with(&prefix));
@@ -94,15 +94,15 @@ impl ContextTokenStore {
     /// 并从内存中清除相关 context_token
     pub async fn cleanup_account(&self, account_id: &str) {
         // 清除内存中的 context_token
-        let prefix = format!("{}:", account_id);
+        let prefix = format!("{account_id}:");
         {
             let mut store = self.store.write().await;
             store.retain(|k, _| !k.starts_with(&prefix));
         }
 
         // 删除所有持久化文件
-        let cred_file = self.state_dir.join(format!("{}.json", account_id));
-        let sync_file = self.state_dir.join(format!("{}.sync.json", account_id));
+        let cred_file = self.state_dir.join(format!("{account_id}.json"));
+        let sync_file = self.state_dir.join(format!("{account_id}.sync.json"));
         let token_file = self.file_path(account_id);
 
         for file in &[cred_file, sync_file, token_file] {
@@ -150,7 +150,7 @@ impl ContextTokenStore {
 
     /// 持久化到磁盘
     async fn persist(&self, account_id: &str) {
-        let prefix = format!("{}:", account_id);
+        let prefix = format!("{account_id}:");
         let tokens: HashMap<String, String> = {
             let store = self.store.read().await;
             store
@@ -175,7 +175,7 @@ impl ContextTokenStore {
 
     /// 保存同步游标到磁盘
     pub async fn save_sync_buf(&self, account_id: &str, buf: &str) {
-        let file_path = self.state_dir.join(format!("{}.sync.json", account_id));
+        let file_path = self.state_dir.join(format!("{account_id}.sync.json"));
 
         let data = serde_json::json!({
             "get_updates_buf": buf,
@@ -195,7 +195,7 @@ impl ContextTokenStore {
 
     /// 从磁盘恢复同步游标
     pub async fn restore_sync_buf(&self, account_id: &str) -> String {
-        let file_path = self.state_dir.join(format!("{}.sync.json", account_id));
+        let file_path = self.state_dir.join(format!("{account_id}.sync.json"));
 
         if !file_path.exists() {
             return String::new();
@@ -218,7 +218,7 @@ impl ContextTokenStore {
         base_url: &str,
         user_id: &str,
     ) {
-        let file_path = self.state_dir.join(format!("{}.json", account_id));
+        let file_path = self.state_dir.join(format!("{account_id}.json"));
 
         let data = serde_json::json!({
             "bot_token": bot_token,
@@ -249,7 +249,7 @@ impl ContextTokenStore {
     /// 从磁盘恢复 Bot 凭证
     #[allow(dead_code)]
     pub async fn restore_credentials(&self, account_id: &str) -> Option<(String, String, String)> {
-        let file_path = self.state_dir.join(format!("{}.json", account_id));
+        let file_path = self.state_dir.join(format!("{account_id}.json"));
 
         if !file_path.exists() {
             return None;

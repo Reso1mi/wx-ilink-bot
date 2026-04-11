@@ -158,10 +158,7 @@ impl ILinkAPI {
         headers.insert("X-WECHAT-UIN", Self::random_wechat_uin().parse().unwrap());
 
         if let Some(ref token) = self.token {
-            headers.insert(
-                "Authorization",
-                format!("Bearer {}", token).parse().unwrap(),
-            );
+            headers.insert("Authorization", format!("Bearer {token}").parse().unwrap());
         }
 
         headers
@@ -198,16 +195,16 @@ impl ILinkAPI {
             .timeout(timeout)
             .send()
             .await
-            .context(format!("请求 {} 失败", endpoint))?;
+            .context(format!("请求 {endpoint} 失败"))?;
 
         let status = resp.status();
         let text = resp.text().await.context("读取响应体失败")?;
 
         if !status.is_success() {
-            anyhow::bail!("HTTP {} - {}: {}", status, endpoint, text);
+            anyhow::bail!("HTTP {status} - {endpoint}: {text}");
         }
 
-        serde_json::from_str(&text).context(format!("解析 {} 响应 JSON 失败: {}", endpoint, text))
+        serde_json::from_str(&text).context(format!("解析 {endpoint} 响应 JSON 失败: {text}"))
     }
 
     // ==================== 扫码登录 ====================
@@ -249,7 +246,7 @@ impl ILinkAPI {
         base_url: &str,
         qrcode: &str,
     ) -> Result<QRCodeStatusResponse> {
-        let url = format!("{}/ilink/bot/get_qrcode_status?qrcode={}", base_url, qrcode);
+        let url = format!("{base_url}/ilink/bot/get_qrcode_status?qrcode={qrcode}");
         debug!("GET {}", url);
 
         let headers = if self.token.is_some() {
@@ -498,7 +495,7 @@ impl ILinkAPI {
         buf[..rawsize].copy_from_slice(data);
         let encrypted = Aes128EcbEnc::new(&aeskey_bytes.into())
             .encrypt_padded_mut::<Pkcs7>(&mut buf, rawsize)
-            .map_err(|e| anyhow::anyhow!("AES 加密失败: {}", e))?
+            .map_err(|e| anyhow::anyhow!("AES 加密失败: {e}"))?
             .to_vec();
         let filesize = encrypted.len();
 
@@ -568,12 +565,12 @@ impl ILinkAPI {
                             "CDN 上传 4xx: status={} headers={} body='{}'",
                             status, headers, text
                         );
-                        anyhow::bail!("CDN 上传失败 HTTP {} (4xx 不可重试): {}", status, text);
+                        anyhow::bail!("CDN 上传失败 HTTP {status} (4xx 不可重试): {text}");
                     }
 
                     if !resp.status().is_success() {
                         let status = resp.status();
-                        last_error = format!("CDN 上传失败 HTTP {}", status);
+                        last_error = format!("CDN 上传失败 HTTP {status}");
                         warn!("CDN 上传失败 (尝试 {}/3): HTTP {}", attempt + 1, status);
                         tokio::time::sleep(Duration::from_secs(1)).await;
                         continue;
@@ -599,14 +596,14 @@ impl ILinkAPI {
                     return Ok((filekey, download_param, aeskey_hex));
                 }
                 Err(e) => {
-                    last_error = format!("CDN 上传请求异常: {}", e);
+                    last_error = format!("CDN 上传请求异常: {e}");
                     warn!("CDN 上传异常 (尝试 {}/3): {}", attempt + 1, e);
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
         }
 
-        anyhow::bail!("{}", last_error)
+        anyhow::bail!("{last_error}")
     }
 
     /// 获取 Bot 配置（typing_ticket 等）

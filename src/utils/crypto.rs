@@ -21,7 +21,7 @@ pub fn aes_ecb_decrypt(ciphertext: &[u8], key_b64: &str) -> Result<Vec<u8>> {
     }
 
     let cipher = Aes128::new_from_slice(&key_bytes)
-        .map_err(|e| anyhow::anyhow!("创建 AES cipher 失败: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("创建 AES cipher 失败: {e}"))?;
 
     let mut plaintext = ciphertext.to_vec();
 
@@ -61,7 +61,7 @@ pub fn aes_ecb_encrypt(plaintext: &[u8], key_b64: &str) -> Result<Vec<u8>> {
     }
 
     let cipher = Aes128::new_from_slice(&key_bytes)
-        .map_err(|e| anyhow::anyhow!("创建 AES cipher 失败: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("创建 AES cipher 失败: {e}"))?;
 
     // PKCS7 填充
     let pad_len = BLOCK_SIZE - (plaintext.len() % BLOCK_SIZE);

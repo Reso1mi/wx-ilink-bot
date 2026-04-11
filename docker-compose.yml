@@ -8,6 +8,7 @@ services:
       - "${BOT_XHS_API_PORT:-5556}:5556"
     volumes:
       - xhs-downloader-volume:/app/Volume
+      - ./xhs-settings.json:/app/Volume/settings.json:ro
 
   wx-ilink-bot:
     build:

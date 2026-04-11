@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const XHS_LINK_PATTERN: &str = r#"(?:https?://)?(?:www\.)?(?:xiaohongshu\.com/(?:explore|discovery/item|user/profile/[A-Za-z0-9]+/)\S+|xhslink\.com/[^\s"<>\\^`{|}，。；！？、【】《》]+)"#;
+
+static XHS_LINK_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(XHS_LINK_PATTERN).expect("小红书链接正则无效"));
 
 #[derive(Debug, Clone)]
 pub struct XhsClientConfig {
@@ -102,7 +105,7 @@ impl XhsClient {
     }
 
     pub fn extract_first_link(text: &str) -> Option<String> {
-        xhs_link_regex()
+        XHS_LINK_REGEX
             .find(text)
             .map(|matched| normalize_url(matched.as_str()))
     }
@@ -128,7 +131,7 @@ impl XhsClient {
         let body = response.text().await.context("读取 XHS 响应失败")?;
 
         if !status.is_success() {
-            anyhow::bail!("XHS-Downloader 返回 HTTP {}: {}", status, body);
+            anyhow::bail!("XHS-Downloader 返回 HTTP {status}: {body}");
         }
 
         let payload: XhsDetailResponse =
@@ -143,11 +146,11 @@ impl XhsClient {
             .get(url)
             .send()
             .await
-            .with_context(|| format!("下载媒体失败: {}", url))?;
+            .with_context(|| format!("下载媒体失败: {url}"))?;
 
         let status = response.status();
         if !status.is_success() {
-            anyhow::bail!("下载媒体失败: HTTP {} ({})", status, url);
+            anyhow::bail!("下载媒体失败: HTTP {status} ({url})");
         }
 
         let content_type = response
@@ -166,11 +169,6 @@ impl XhsClient {
             extension,
         })
     }
-}
-
-fn xhs_link_regex() -> &'static Regex {
-    static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| Regex::new(XHS_LINK_PATTERN).expect("小红书链接正则无效"))
 }
 
 fn parse_work(data: Value) -> Result<XhsWork> {
@@ -243,7 +241,7 @@ fn normalize_url(value: &str) -> String {
     if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
         trimmed.to_string()
     } else {
-        format!("https://{}", trimmed)
+        format!("https://{trimmed}")
     }
 }
 

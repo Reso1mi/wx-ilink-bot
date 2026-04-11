@@ -109,7 +109,7 @@ impl QRCodeManager {
                 }
                 "scaned_but_redirect" => {
                     if let Some(ref redirect_host) = status_resp.redirect_host {
-                        current_base_url = format!("https://{}", redirect_host);
+                        current_base_url = format!("https://{redirect_host}");
                         info!("IDC 重定向到: {}", current_base_url);
                     }
                 }

@@ -76,14 +76,11 @@ async fn main() {
     println!("\n========================================");
     println!("  微信 iLink Bot 已启动!");
     println!("========================================");
-    println!("管理后台:      http://localhost:{}/admin", http_port);
-    println!("HTTP API:      http://localhost:{}", http_port);
-    println!(
-        "添加新账号:    POST http://localhost:{}/account/add",
-        http_port
-    );
+    println!("管理后台:      http://localhost:{http_port}/admin");
+    println!("HTTP API:      http://localhost:{http_port}");
+    println!("添加新账号:    POST http://localhost:{http_port}/account/add");
     println!("异步添加:      POST /account/qrcode → GET /account/status?qrcode=xxx");
-    println!("查看状态:      GET  http://localhost:{}/status", http_port);
+    println!("查看状态:      GET  http://localhost:{http_port}/status");
     println!("\n所有账号均通过 HTTP 接口按需添加");
     println!("按 Ctrl+C 停止\n");
 
