@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::core::parser::ParsedMessage;
+use crate::core::router::{MatchType, RouteRule};
 use crate::modules::base::{reply, send_to, MessageSender, ModuleHandler};
 
 /// 通知模块 — 处理 "通知" 开头的消息
@@ -50,5 +51,9 @@ impl ModuleHandler for NotifyModule {
 
     fn name(&self) -> &str {
         "NotifyModule"
+    }
+
+    fn routes(&self) -> Vec<RouteRule> {
+        vec![RouteRule::new("notify", "通知", MatchType::Prefix)]
     }
 }

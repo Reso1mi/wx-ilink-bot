@@ -75,6 +75,21 @@ impl ContextTokenStore {
             .collect()
     }
 
+    /// 获取所有已连接用户的 user_id（去重）
+    pub async fn get_all_user_ids(&self) -> Vec<String> {
+        let store = self.store.read().await;
+        let mut user_ids: Vec<String> = store
+            .keys()
+            .filter_map(|key| {
+                // key 格式: account_id:user_id
+                key.split(':').nth(1).map(|s| s.to_string())
+            })
+            .collect();
+        user_ids.sort();
+        user_ids.dedup();
+        user_ids
+    }
+
     /// 清除某个 account 的所有 token（仅内存 + context_token 文件）
     #[allow(dead_code)]
     pub async fn clear_account(&self, account_id: &str) {

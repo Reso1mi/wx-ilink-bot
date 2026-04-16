@@ -3,7 +3,8 @@ use async_trait::async_trait;
 use tracing::{info, warn};
 
 use crate::core::parser::ParsedMessage;
-use crate::core::xhs_client::{XhsClient, XhsClientConfig, XhsWork, XhsWorkKind};
+use crate::core::router::{MatchType, RouteRule};
+use crate::core::xhs_client::{XhsClient, XhsClientConfig, XhsWork, XhsWorkKind, XHS_LINK_PATTERN};
 use crate::modules::base::{reply, MessageSender, ModuleHandler};
 
 pub struct XhsModule {
@@ -174,6 +175,10 @@ impl ModuleHandler for XhsModule {
 
     fn name(&self) -> &str {
         "XhsModule"
+    }
+
+    fn routes(&self) -> Vec<RouteRule> {
+        vec![RouteRule::new("xhs_link", XHS_LINK_PATTERN, MatchType::RegexMatch)]
     }
 }
 

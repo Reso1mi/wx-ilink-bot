@@ -8,12 +8,15 @@ use std::sync::Arc;
 
 use config::AppConfig;
 use core::bot::WeixinBot;
-use core::router::{MatchType, RouteRule};
-use core::xhs_client::{XhsClientConfig, XHS_LINK_PATTERN};
+use core::nickname_store::NicknameStore;
+use core::todo_store::TodoStore;
+use core::xhs_client::XhsClientConfig;
 use modules::echo_module::EchoModule;
 use modules::help_module::HelpModule;
+use modules::nickname_module::NicknameModule;
 use modules::notify_module::NotifyModule;
 use modules::query_module::QueryModule;
+use modules::todo_module::TodoModule;
 use modules::xhs_module::XhsModule;
 
 #[tokio::main]
@@ -35,28 +38,37 @@ async fn main() {
         config.xhs_timeout_ms,
     );
 
+    // 创建共享存储（自动恢复持久化数据）
+    let nickname_store = NicknameStore::new(&config.state_dir).await;
+    let todo_store = TodoStore::new(&config.state_dir).await;
+
     // 3. 创建 Bot 实例并注册业务模块
     let mut bot = WeixinBot::new(config);
 
-    bot.router.register(
-        RouteRule::new("echo", "回声", MatchType::Prefix),
-        Arc::new(EchoModule::new()),
-    );
-    bot.router.register(
-        RouteRule::new("query", "查询", MatchType::Prefix),
-        Arc::new(QueryModule::new()),
-    );
-    bot.router.register(
-        RouteRule::new("notify", "通知", MatchType::Prefix),
-        Arc::new(NotifyModule::new()),
-    );
-    bot.router.register(
-        RouteRule::new("xhs_link", XHS_LINK_PATTERN, MatchType::RegexMatch),
-        Arc::new(XhsModule::new(xhs_config).expect("初始化 XhsModule 失败")),
-    );
+    bot.router.register_module(Arc::new(NicknameModule::new(
+        nickname_store.clone(),
+        bot.ctx_store().clone(),
+    )));
+    bot.router
+        .register_module(Arc::new(TodoModule::new(todo_store.clone())));
+    bot.router.register_module(Arc::new(EchoModule::new()));
+    bot.router.register_module(Arc::new(QueryModule::new()));
+    bot.router.register_module(Arc::new(NotifyModule::new()));
+    bot.router.register_module(Arc::new(
+        XhsModule::new(xhs_config).expect("初始化 XhsModule 失败"),
+    ));
 
     // 4. 设置默认处理器（未匹配时触发）
     bot.router.set_default(Arc::new(HelpModule::new(vec![
+        ("叫我 <昵称>", "设置你的昵称"),
+        ("我是谁", "查看你的昵称"),
+        ("用户列表", "查看当前所有用户"),
+        ("待办 <内容>", "添加待办事项"),
+        ("待办列表", "查看未完成的待办"),
+        ("完成 <编号>", "标记待办为已完成"),
+        ("删除待办 <编号>", "删除指定待办"),
+        ("所有待办", "查看全部待办（含已完成）"),
+        ("清空已完成", "批量删除已完成项"),
         ("回声 <内容>", "原样返回你的消息"),
         ("查询 <关键词>", "查询信息"),
         ("通知 <用户ID> <内容>", "向指定用户发送通知"),
@@ -86,7 +98,11 @@ async fn main() {
 
     let bot_http = Arc::clone(&bot);
     let http_handle = tokio::spawn(async move {
-        http_server::start_http_server(bot_http, http_port).await;
+        let state = http_server::AppState {
+            bot: bot_http,
+            nickname_store: nickname_store.clone(),
+        };
+        http_server::start_http_server(state, http_port).await;
     });
 
     // 8. 等待停止信号

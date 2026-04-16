@@ -362,6 +362,11 @@ impl WeixinBot {
         }
     }
 
+    /// 获取 ContextTokenStore 引用（供模块使用）
+    pub fn ctx_store(&self) -> &ContextTokenStore {
+        &self.ctx_store
+    }
+
     // ==================== 启动与恢复 ====================
 
     /// 启动 Bot — 自动恢复之前保存的账号
@@ -970,6 +975,7 @@ impl WeixinBot {
 
 /// 账号信息（对外展示）
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AccountInfo {
     pub account_id: String,
     pub user_id: String,

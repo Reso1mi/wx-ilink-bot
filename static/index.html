@@ -222,7 +222,7 @@
       <div class="card-title">账号概览</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>账号 ID</th><th>扫码用户</th></tr></thead>
+          <thead><tr><th>昵称</th><th>扫码用户</th></tr></thead>
           <tbody id="dashAccountsBody"></tbody>
         </table>
       </div>
@@ -262,7 +262,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>账号 ID</th><th>扫码用户</th></tr></thead>
+          <thead><tr><th>昵称</th><th>扫码用户</th></tr></thead>
           <tbody id="accountsBody"></tbody>
         </table>
       </div>
@@ -294,7 +294,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>用户 ID</th><th>所属账号</th></tr></thead>
+          <thead><tr><th>昵称</th><th>所属账号</th></tr></thead>
           <tbody id="usersBody"></tbody>
         </table>
       </div>
@@ -436,7 +436,7 @@ async function loadDashboard() {
   } else {
     empty.style.display = 'none';
     tbody.innerHTML = status.accounts.map(a =>
-      `<tr><td class="mono">${esc(a.account_id)}</td><td class="mono">${esc(a.user_id)}</td></tr>`
+      `<tr><td class="mono">${esc(a.nickname)}</td><td class="mono">${esc(a.user_id)}</td></tr>`
     ).join('');
   }
 }
@@ -453,7 +453,7 @@ async function loadAccounts() {
   } else {
     empty.style.display = 'none';
     tbody.innerHTML = data.accounts.map(a =>
-      `<tr><td class="mono">${esc(a.account_id)}</td><td class="mono">${esc(a.user_id)}</td></tr>`
+      `<tr><td class="mono">${esc(a.nickname)}</td><td class="mono">${esc(a.user_id)}</td></tr>`
     ).join('');
   }
 }
@@ -546,7 +546,7 @@ async function loadUsers() {
   if (data.accounts) {
     data.accounts.forEach(acc => {
       (acc.users || []).forEach(u => {
-        rows.push(`<tr><td class="mono">${esc(u.user_id)}</td><td class="mono">${esc(acc.account_id)}</td></tr>`);
+        rows.push(`<tr><td class="mono">${esc(u.nickname)}</td><td class="mono">${esc(acc.account_id)}</td></tr>`);
       });
     });
   }
@@ -637,17 +637,18 @@ async function loadQuickUsers() {
   const data = await api('/users');
   const el = document.getElementById('quickUsers');
   let users = [];
+  let users = [];
   if (data?.accounts) {
     data.accounts.forEach(acc => {
-      (acc.users || []).forEach(u => users.push(u.user_id));
+      (acc.users || []).forEach(u => users.push({ user_id: u.user_id, nickname: u.nickname || u.user_id }));
     });
   }
   if (users.length === 0) {
     el.innerHTML = '<span style="color:var(--text2); font-size:13px;">暂无用户</span>';
     return;
   }
-  el.innerHTML = users.map(uid =>
-    `<button class="btn btn-outline btn-sm" onclick="fillUserId('${esc(uid)}')">${esc(uid)}</button>`
+  el.innerHTML = users.map(u =>
+    `<button class="btn btn-outline btn-sm" onclick="fillUserId('${esc(u.user_id)}')">${esc(u.nickname)}</button>`
   ).join('');
 }
 

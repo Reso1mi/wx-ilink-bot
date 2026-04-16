@@ -88,6 +88,7 @@ impl MessageRouter {
     }
 
     /// 注册路由规则和对应的处理模块
+    #[allow(dead_code)]
     pub fn register(&mut self, rule: RouteRule, handler: Arc<dyn ModuleHandler>) {
         tracing::info!(
             "路由注册: [{:?}] '{}' → {}",
@@ -96,6 +97,27 @@ impl MessageRouter {
             handler.name()
         );
         self.routes.push((rule, handler));
+    }
+
+    /// 注册一个模块 — 自动从 `routes()` 获取所有路由规则
+    ///
+    /// 模块只需实现 `routes()` 声明自己关心的匹配规则，
+    /// 路由器会将每条规则关联到同一个模块实例（`Arc` 共享）。
+    pub fn register_module(&mut self, handler: Arc<dyn ModuleHandler>) {
+        let rules = handler.routes();
+        if rules.is_empty() {
+            tracing::warn!("模块 {} 未声明任何路由规则", handler.name());
+            return;
+        }
+        for rule in rules {
+            tracing::info!(
+                "路由注册: [{:?}] '{}' → {}",
+                rule.match_type,
+                rule.pattern,
+                handler.name()
+            );
+            self.routes.push((rule, Arc::clone(&handler)));
+        }
     }
 
     /// 设置默认处理模块（无规则匹配时触发）

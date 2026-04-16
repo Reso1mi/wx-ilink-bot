@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::core::parser::ParsedMessage;
+use crate::core::router::{MatchType, RouteRule};
 use crate::modules::base::{reply, MessageSender, ModuleHandler};
 
 /// 查询模块 — 处理 "查询" 开头的消息
@@ -31,6 +32,10 @@ impl ModuleHandler for QueryModule {
 
     fn name(&self) -> &str {
         "QueryModule"
+    }
+
+    fn routes(&self) -> Vec<RouteRule> {
+        vec![RouteRule::new("query", "查询", MatchType::Prefix)]
     }
 }
 

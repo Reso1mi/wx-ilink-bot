@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::core::parser::ParsedMessage;
+use crate::core::router::RouteRule;
 
 /// 消息发送接口 — Bot 主类实现此 trait 供模块使用
 ///
@@ -75,6 +76,9 @@ pub trait MessageSender: Send + Sync {
 ///
 /// 所有业务模块必须实现此 trait。
 /// 模块通过 `MessageSender` 发送消息，实现与用户的交互。
+///
+/// 模块需要实现 `routes()` 声明自己关心的路由规则，
+/// 路由器会在注册时自动展开为多条规则，全部指向同一个模块实例。
 #[async_trait]
 pub trait ModuleHandler: Send + Sync {
     /// 处理消息
@@ -86,6 +90,14 @@ pub trait ModuleHandler: Send + Sync {
 
     /// 模块名称（用于日志和路由注册）
     fn name(&self) -> &str;
+
+    /// 声明模块关心的路由规则
+    ///
+    /// 返回 `Vec<RouteRule>`，路由器会将每条规则关联到同一个模块实例。
+    /// 默认返回空（适用于默认处理器等不需要主动路由的模块）。
+    fn routes(&self) -> Vec<RouteRule> {
+        Vec::new()
+    }
 }
 
 /// 回复辅助函数 — 直接回复消息发送者

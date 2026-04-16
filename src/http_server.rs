@@ -12,12 +12,17 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::core::bot::WeixinBot;
+use crate::core::nickname_store::NicknameStore;
 
 /// 共享状态
-pub type SharedBot = Arc<WeixinBot>;
+#[derive(Clone)]
+pub struct AppState {
+    pub bot: Arc<WeixinBot>,
+    pub nickname_store: NicknameStore,
+}
 
 /// 创建 HTTP 路由
-pub fn create_router(bot: SharedBot) -> Router {
+pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index_handler))
         .route("/admin", get(admin_handler))
@@ -36,7 +41,7 @@ pub fn create_router(bot: SharedBot) -> Router {
         .route("/proxy/image", get(proxy_image_handler))
         // 二维码图片生成（后端渲染，不依赖前端 JS 库或外部 CDN）
         .route("/qrcode/image", get(qrcode_image_handler))
-        .with_state(bot)
+        .with_state(state)
 }
 
 /// 根路径 — 返回可用接口列表
@@ -69,32 +74,42 @@ async fn health_handler() -> Json<Value> {
 }
 
 /// Bot 状态
-async fn status_handler(State(bot): State<SharedBot>) -> Json<Value> {
+async fn status_handler(State(state): State<AppState>) -> Json<Value> {
+    let bot = &state.bot;
+    let ns = &state.nickname_store;
     let online = bot.is_online().await;
     let accounts = bot.get_accounts_info().await;
+
+    let mut account_list = Vec::new();
+    for a in &accounts {
+        let display = ns.display_name(&a.user_id).await;
+        account_list.push(json!({
+            "nickname": display,
+            "user_id": a.user_id,
+        }));
+    }
 
     Json(json!({
         "online": online,
         "account_count": accounts.len(),
-        "accounts": accounts.iter().map(|a| json!({
-            "account_id": a.account_id,
-            "user_id": a.user_id,
-        })).collect::<Vec<_>>(),
+        "accounts": account_list,
     }))
 }
 
 /// 所有账号列表
-async fn accounts_handler(State(bot): State<SharedBot>) -> Json<Value> {
+async fn accounts_handler(State(state): State<AppState>) -> Json<Value> {
+    let bot = &state.bot;
+    let ns = &state.nickname_store;
     let accounts = bot.get_accounts_info().await;
-    let list: Vec<Value> = accounts
-        .iter()
-        .map(|a| {
-            json!({
-                "account_id": a.account_id,
-                "user_id": a.user_id,
-            })
-        })
-        .collect();
+
+    let mut list = Vec::new();
+    for a in &accounts {
+        let display = ns.display_name(&a.user_id).await;
+        list.push(json!({
+            "nickname": display,
+            "user_id": a.user_id,
+        }));
+    }
 
     Json(json!({
         "count": list.len(),
@@ -103,22 +118,28 @@ async fn accounts_handler(State(bot): State<SharedBot>) -> Json<Value> {
 }
 
 /// 所有已连接用户（按账号分组）
-async fn users_handler(State(bot): State<SharedBot>) -> Json<Value> {
+async fn users_handler(State(state): State<AppState>) -> Json<Value> {
+    let bot = &state.bot;
+    let ns = &state.nickname_store;
     let users_by_account = bot.get_connected_users().await;
     let mut total = 0;
 
-    let accounts: Vec<Value> = users_by_account
-        .iter()
-        .map(|(account_id, users)| {
-            total += users.len();
-            json!({
-                "account_id": account_id,
-                "users": users.iter().map(|u| json!({
-                    "user_id": u.user_id,
-                })).collect::<Vec<_>>(),
-            })
-        })
-        .collect();
+    let mut accounts = Vec::new();
+    for (account_id, users) in &users_by_account {
+        total += users.len();
+        let mut user_list = Vec::new();
+        for u in users {
+            let display = ns.display_name(&u.user_id).await;
+            user_list.push(json!({
+                "nickname": display,
+                "user_id": u.user_id,
+            }));
+        }
+        accounts.push(json!({
+            "account_id": account_id,
+            "users": user_list,
+        }));
+    }
 
     Json(json!({
         "total_users": total,
@@ -129,8 +150,8 @@ async fn users_handler(State(bot): State<SharedBot>) -> Json<Value> {
 /// 同步添加账号：生成二维码并阻塞等待扫码完成
 ///
 /// `POST /account/add`
-async fn add_account_handler(State(bot): State<SharedBot>) -> Json<Value> {
-    match bot.add_account().await {
+async fn add_account_handler(State(state): State<AppState>) -> Json<Value> {
+    match state.bot.add_account().await {
         Ok(result) => {
             if result.success {
                 Json(json!({
@@ -155,8 +176,8 @@ async fn add_account_handler(State(bot): State<SharedBot>) -> Json<Value> {
 /// 异步添加账号 Step 1：生成二维码
 ///
 /// `POST /account/qrcode`
-async fn account_qrcode_handler(State(bot): State<SharedBot>) -> Json<Value> {
-    match bot.create_account_qrcode().await {
+async fn account_qrcode_handler(State(state): State<AppState>) -> Json<Value> {
+    match state.bot.create_account_qrcode().await {
         Ok(qr) => Json(json!({
             "success": true,
             "qrcode": qr.qrcode,
@@ -180,10 +201,10 @@ struct AccountStatusQuery {
 ///
 /// `GET /account/status?qrcode=xxx`
 async fn account_status_handler(
-    State(bot): State<SharedBot>,
+    State(state): State<AppState>,
     Query(query): Query<AccountStatusQuery>,
 ) -> Json<Value> {
-    match bot.poll_account_status(&query.qrcode).await {
+    match state.bot.poll_account_status(&query.qrcode).await {
         Ok(result) => Json(json!({
             "status": result.status,
             "account_id": result.account_id,
@@ -197,8 +218,8 @@ async fn account_status_handler(
 }
 
 /// 启动 HTTP 服务
-pub async fn start_http_server(bot: SharedBot, port: u16) {
-    let app = create_router(bot);
+pub async fn start_http_server(state: AppState, port: u16) {
+    let app = create_router(state);
     let addr = format!("0.0.0.0:{port}");
 
     info!("HTTP 管理接口启动: http://localhost:{}", port);
@@ -228,7 +249,7 @@ struct SendMessageBody {
 /// { "to_user_id": "xxx@im.wechat", "text": "你好" }
 /// ```
 async fn send_message_handler(
-    State(bot): State<SharedBot>,
+    State(state): State<AppState>,
     Json(body): Json<SendMessageBody>,
 ) -> Json<Value> {
     if body.to_user_id.is_empty() || body.text.is_empty() {
@@ -238,7 +259,13 @@ async fn send_message_handler(
         }));
     }
 
-    match bot.send_message(&body.to_user_id, &body.text).await {
+    // 支持通过昵称定位用户
+    let to_user_id = match state.nickname_store.find_by_nickname(&body.to_user_id).await {
+        Some(uid) => uid,
+        None => body.to_user_id.clone(),
+    };
+
+    match state.bot.send_message(&to_user_id, &body.text).await {
         Ok(_) => Json(json!({
             "success": true,
             "type": "text",
@@ -260,7 +287,7 @@ async fn send_message_handler(
 /// - `type`: 消息类型，可选 "image" / "file" / "video"（默认根据 content_type 推断）
 /// - `file`: 文件内容（必填）
 /// - `play_length`: 视频时长秒数（仅 video 类型）
-async fn send_file_handler(State(bot): State<SharedBot>, mut multipart: Multipart) -> Json<Value> {
+async fn send_file_handler(State(state): State<AppState>, mut multipart: Multipart) -> Json<Value> {
     let mut to_user_id = String::new();
     let mut msg_type = String::new();
     let mut file_data: Option<Vec<u8>> = None;
@@ -327,9 +354,15 @@ async fn send_file_handler(State(bot): State<SharedBot>, mut multipart: Multipar
         msg_type = infer_message_type(&content_type);
     }
 
+    // 支持通过昵称定位用户
+    let resolved_uid = match state.nickname_store.find_by_nickname(&to_user_id).await {
+        Some(uid) => uid,
+        None => to_user_id.clone(),
+    };
+
     info!(
         "收到文件发送请求: to={} type={} file={} size={} content_type={}",
-        to_user_id,
+        resolved_uid,
         msg_type,
         file_name,
         data.len(),
@@ -338,16 +371,16 @@ async fn send_file_handler(State(bot): State<SharedBot>, mut multipart: Multipar
 
     let result = match msg_type.as_str() {
         "image" => {
-            bot.send_image(&to_user_id, &data, &file_name, &content_type)
+            state.bot.send_image(&resolved_uid, &data, &file_name, &content_type)
                 .await
         }
         "video" => {
-            bot.send_video(&to_user_id, &data, &file_name, &content_type, play_length)
+            state.bot.send_video(&resolved_uid, &data, &file_name, &content_type, play_length)
                 .await
         }
         _ => {
             // 默认作为文件发送
-            bot.send_file(&to_user_id, &data, &file_name, &content_type)
+            state.bot.send_file(&resolved_uid, &data, &file_name, &content_type)
                 .await
         }
     };

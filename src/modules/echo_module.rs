@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::core::parser::ParsedMessage;
+use crate::core::router::{MatchType, RouteRule};
 use crate::modules::base::{reply, MessageSender, ModuleHandler};
 
 /// 回声模块 — 原样返回用户消息（用于测试）
@@ -22,5 +23,9 @@ impl ModuleHandler for EchoModule {
 
     fn name(&self) -> &str {
         "EchoModule"
+    }
+
+    fn routes(&self) -> Vec<RouteRule> {
+        vec![RouteRule::new("echo", "回声", MatchType::Prefix)]
     }
 }
