@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tracing::{info, warn};
 
+use crate::config::AppConfig;
 use crate::core::parser::ParsedMessage;
 use crate::core::router::{MatchType, RouteRule};
 use crate::core::xhs_client::{XhsClient, XhsClientConfig, XhsWork, XhsWorkKind, XHS_LINK_PATTERN};
@@ -12,9 +13,15 @@ pub struct XhsModule {
 }
 
 impl XhsModule {
-    pub fn new(config: XhsClientConfig) -> Result<Self> {
+    pub fn new(config: &AppConfig) -> Result<Self> {
+        let xhs_config = XhsClientConfig::new(
+            config.xhs_api_url.clone(),
+            config.xhs_cookie.clone(),
+            config.xhs_proxy.clone(),
+            config.xhs_timeout_ms,
+        );
         Ok(Self {
-            client: XhsClient::new(config)?,
+            client: XhsClient::new(xhs_config)?,
         })
     }
 

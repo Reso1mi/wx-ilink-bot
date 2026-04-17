@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
+use crate::config::AppConfig;
 use crate::core::nickname_store::NicknameStore;
 use crate::core::parser::ParsedMessage;
 use crate::core::router::{MatchType, RouteRule};
@@ -14,11 +15,17 @@ pub struct NicknameModule {
 }
 
 impl NicknameModule {
-    pub fn new(nickname_store: NicknameStore, ctx_store: ContextTokenStore) -> Self {
+    pub async fn new(config: &AppConfig, ctx_store: ContextTokenStore) -> Self {
+        let nickname_store = NicknameStore::new(&config.state_dir).await;
         Self {
             nickname_store,
             ctx_store,
         }
+    }
+
+    /// 获取内部的 NicknameStore（供 HTTP 服务等外部使用）
+    pub fn nickname_store(&self) -> &NicknameStore {
+        &self.nickname_store
     }
 }
 

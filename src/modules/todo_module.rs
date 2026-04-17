@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
+use crate::config::AppConfig;
 use crate::core::todo_store::TodoStore;
 use crate::core::parser::ParsedMessage;
 use crate::core::router::{MatchType, RouteRule};
@@ -20,7 +21,8 @@ pub struct TodoModule {
 }
 
 impl TodoModule {
-    pub fn new(todo_store: TodoStore) -> Self {
+    pub async fn new(config: &AppConfig) -> Self {
+        let todo_store = TodoStore::new(&config.state_dir).await;
         Self { todo_store }
     }
 }

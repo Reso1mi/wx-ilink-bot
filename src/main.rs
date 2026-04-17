@@ -8,9 +8,6 @@ use std::sync::Arc;
 
 use config::AppConfig;
 use core::bot::WeixinBot;
-use core::nickname_store::NicknameStore;
-use core::todo_store::TodoStore;
-use core::xhs_client::XhsClientConfig;
 use modules::echo_module::EchoModule;
 use modules::help_module::HelpModule;
 use modules::nickname_module::NicknameModule;
@@ -31,31 +28,21 @@ async fn main() {
     tracing::info!("状态目录: {}", config.state_dir);
 
     let http_port = config.http_port;
-    let xhs_config = XhsClientConfig::new(
-        config.xhs_api_url.clone(),
-        config.xhs_cookie.clone(),
-        config.xhs_proxy.clone(),
-        config.xhs_timeout_ms,
-    );
-
-    // 创建共享存储（自动恢复持久化数据）
-    let nickname_store = NicknameStore::new(&config.state_dir).await;
-    let todo_store = TodoStore::new(&config.state_dir).await;
 
     // 3. 创建 Bot 实例并注册业务模块
-    let mut bot = WeixinBot::new(config);
+    let mut bot = WeixinBot::new(config.clone());
 
-    bot.router.register_module(Arc::new(NicknameModule::new(
-        nickname_store.clone(),
-        bot.ctx_store().clone(),
-    )));
+    let nickname_module = Arc::new(NicknameModule::new(&config, bot.ctx_store().clone()).await);
+    let nickname_store = nickname_module.nickname_store().clone();
+
+    bot.router.register_module(nickname_module);
     bot.router
-        .register_module(Arc::new(TodoModule::new(todo_store.clone())));
+        .register_module(Arc::new(TodoModule::new(&config).await));
     bot.router.register_module(Arc::new(EchoModule::new()));
     bot.router.register_module(Arc::new(QueryModule::new()));
     bot.router.register_module(Arc::new(NotifyModule::new()));
     bot.router.register_module(Arc::new(
-        XhsModule::new(xhs_config).expect("初始化 XhsModule 失败"),
+        XhsModule::new(&config).expect("初始化 XhsModule 失败"),
     ));
 
     // 4. 设置默认处理器（未匹配时触发）
