@@ -399,6 +399,10 @@ function toast(msg, type = 'info') {
 async function api(path, opts = {}) {
   try {
     const resp = await fetch(API + path, opts);
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${text || resp.statusText}`);
+    }
     return await resp.json();
   } catch (e) {
     toast('请求失败: ' + e.message, 'error');
@@ -636,7 +640,6 @@ async function sendFileMessage() {
 async function loadQuickUsers() {
   const data = await api('/users');
   const el = document.getElementById('quickUsers');
-  let users = [];
   let users = [];
   if (data?.accounts) {
     data.accounts.forEach(acc => {
