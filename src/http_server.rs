@@ -178,16 +178,22 @@ async fn add_account_handler(State(state): State<AppState>) -> Json<Value> {
 /// `POST /account/qrcode`
 async fn account_qrcode_handler(State(state): State<AppState>) -> Json<Value> {
     match state.bot.create_account_qrcode().await {
-        Ok(qr) => Json(json!({
-            "success": true,
-            "qrcode": qr.qrcode,
-            "qrcode_img_url": qr.qrcode_img_url,
-            "qrcode_content": qr.qrcode_content,
-        })),
-        Err(e) => Json(json!({
-            "success": false,
-            "error": format!("生成二维码失败: {e}"),
-        })),
+        Ok(qr) => {
+            info!("HTTP /account/qrcode 成功生成二维码");
+            Json(json!({
+                "success": true,
+                "qrcode": qr.qrcode,
+                "qrcode_img_url": qr.qrcode_img_url,
+                "qrcode_content": qr.qrcode_content,
+            }))
+        }
+        Err(e) => {
+            warn!("HTTP /account/qrcode 生成二维码失败: {e:#}");
+            Json(json!({
+                "success": false,
+                "error": format!("生成二维码失败: {e:#}"),
+            }))
+        }
     }
 }
 
@@ -205,15 +211,23 @@ async fn account_status_handler(
     Query(query): Query<AccountStatusQuery>,
 ) -> Json<Value> {
     match state.bot.poll_account_status(&query.qrcode).await {
-        Ok(result) => Json(json!({
-            "status": result.status,
-            "account_id": result.account_id,
-            "user_id": result.user_id,
-        })),
-        Err(e) => Json(json!({
-            "status": "error",
-            "error": format!("查询状态失败: {e}"),
-        })),
+        Ok(result) => {
+            if result.status != "wait" {
+                info!("HTTP /account/status 扫码状态: {}", result.status);
+            }
+            Json(json!({
+                "status": result.status,
+                "account_id": result.account_id,
+                "user_id": result.user_id,
+            }))
+        }
+        Err(e) => {
+            warn!("HTTP /account/status 查询状态失败: {e:#}");
+            Json(json!({
+                "status": "error",
+                "error": format!("查询状态失败: {e:#}"),
+            }))
+        }
     }
 }
 

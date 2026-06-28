@@ -534,9 +534,12 @@ async function startAddAccount() {
       qrPollTimer = null;
       document.getElementById('qrWaiting').style.display = 'none';
       document.getElementById('qrResult').style.display = '';
+      const errorMessage = st.status === 'expired'
+        ? '二维码已过期'
+        : (st.error || '扫码状态查询失败');
       document.getElementById('qrResult').innerHTML =
-        `<div style="color:var(--red);">❌ ${st.status === 'expired' ? '二维码已过期' : '出错了'}</div>`;
-      toast('二维码已过期，请重试', 'error');
+        `<div style="color:var(--red);">❌ ${esc(errorMessage)}</div>`;
+      toast(errorMessage, 'error');
     }
   }, 1500);
 }

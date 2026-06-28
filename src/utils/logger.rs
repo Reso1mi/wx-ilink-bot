@@ -6,6 +6,8 @@ pub fn init_logger(log_level: &str) {
 
     fmt()
         .with_env_filter(filter)
+        .with_writer(std::io::stdout)
+        .with_ansi(false)
         .with_target(true)
         .with_thread_ids(false)
         .with_file(false)

@@ -100,6 +100,19 @@ docker compose up -d --build
 只是还没有恢复或添加已登录账号，需要进入「账号管理」扫码添加。可用
 `http://192.168.1.4:3001/health` 检查 HTTP 服务是否在线。
 
+添加账号失败时，先直接调用二维码接口并查看容器日志：
+
+```bash
+curl -X POST http://192.168.1.4:3001/account/qrcode
+sudo docker-compose logs --tail=200 -f wx-ilink-bot
+```
+
+如果 `docker-compose logs` 没有输出，可以改用容器名查看：
+
+```bash
+sudo docker logs --tail=200 -f wx-ilink-bot
+```
+
 如果你不需要自定义配置，也可以跳过 `cp .env.example .env`，Compose 会直接使用内置默认值。
 
 常用命令：

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -709,6 +709,18 @@ impl WeixinBot {
         let qrcode = qr_data.qrcode.unwrap_or_default();
         let qrcode_img_content = qr_data.qrcode_img_content.unwrap_or_default();
 
+        if qr_data.errcode != 0 {
+            return Err(anyhow!(
+                "iLink 生成二维码失败: errcode={} errmsg={}",
+                qr_data.errcode,
+                qr_data.errmsg.unwrap_or_else(|| "无错误信息".to_string())
+            ));
+        }
+
+        if qrcode.is_empty() {
+            return Err(anyhow!("iLink 生成二维码失败: 响应缺少 qrcode 字段"));
+        }
+
         // qrcode: 二维码标识符/内容，同时用于轮询状态和 JS QR 库本地渲染
         // qrcode_img_content: 可能是图片 URL（如果以 https:// 开头），可通过 proxy 加载
         info!(
@@ -754,6 +766,17 @@ impl WeixinBot {
             .clone()
             .unwrap_or_else(|| "wait".to_string());
 
+        if status_resp.errcode != 0 {
+            return Err(anyhow!(
+                "iLink 查询扫码状态失败: errcode={} errmsg={}",
+                status_resp.errcode,
+                status_resp
+                    .errmsg
+                    .clone()
+                    .unwrap_or_else(|| "无错误信息".to_string())
+            ));
+        }
+
         let mut result = BindPollResult {
             status: status.clone(),
             account_id: None,
@@ -767,6 +790,15 @@ impl WeixinBot {
             let base_url = status_resp
                 .baseurl
                 .unwrap_or_else(|| self.config.base_url.clone());
+
+            if account_id.is_empty() || user_id.is_empty() || bot_token.is_empty() {
+                return Err(anyhow!(
+                    "iLink 已确认扫码但响应缺少必要字段: account_id_empty={} user_id_empty={} bot_token_empty={}",
+                    account_id.is_empty(),
+                    user_id.is_empty(),
+                    bot_token.is_empty()
+                ));
+            }
 
             info!("扫码确认: account_id={} user_id={}", account_id, user_id);
 
