@@ -189,7 +189,7 @@
   <h1><span>🤖</span> 微信 iLink Bot</h1>
   <div id="headerStatus" class="status-badge status-offline">
     <div class="status-dot"></div>
-    <span>离线</span>
+    <span>检测中</span>
   </div>
 </div>
 
@@ -206,11 +206,11 @@
     <div class="stats">
       <div class="stat-card green">
         <div id="statOnline" class="stat-value">-</div>
-        <div class="stat-label">运行状态</div>
+        <div class="stat-label">Bot 登录状态</div>
       </div>
       <div class="stat-card blue">
         <div id="statAccounts" class="stat-value">0</div>
-        <div class="stat-label">在线账号数</div>
+        <div class="stat-label">已注册账号数</div>
       </div>
       <div class="stat-card yellow">
         <div id="statUsers" class="stat-value">0</div>
@@ -228,7 +228,7 @@
       </div>
       <div id="dashAccountsEmpty" class="empty" style="display:none">
         <div class="empty-icon">📭</div>
-        <p>暂无账号，前往「账号管理」添加</p>
+        <p>暂无已登录账号，前往「账号管理」扫码添加</p>
       </div>
     </div>
 
@@ -416,15 +416,16 @@ async function loadDashboard() {
     api('/status'),
     api('/users'),
   ]);
-  if (!status) return;
+  if (!status) {
+    setHeaderStatus(false, '服务离线');
+    return;
+  }
 
   // Header badge
-  const badge = document.getElementById('headerStatus');
-  badge.className = 'status-badge ' + (status.online ? 'status-online' : 'status-offline');
-  badge.querySelector('span').textContent = status.online ? '在线' : '离线';
+  setHeaderStatus(true, status.online ? 'Bot 已登录' : '服务在线');
 
   // Stats
-  document.getElementById('statOnline').textContent = status.online ? '在线' : '离线';
+  document.getElementById('statOnline').textContent = status.online ? '已登录' : '未登录';
   document.getElementById('statAccounts').textContent = status.account_count || 0;
 
   let totalUsers = 0;
@@ -443,6 +444,12 @@ async function loadDashboard() {
       `<tr><td class="mono">${esc(a.nickname)}</td><td class="mono">${esc(a.user_id)}</td></tr>`
     ).join('');
   }
+}
+
+function setHeaderStatus(online, text) {
+  const badge = document.getElementById('headerStatus');
+  badge.className = 'status-badge ' + (online ? 'status-online' : 'status-offline');
+  badge.querySelector('span').textContent = text;
 }
 
 // ========== 账号管理 ==========

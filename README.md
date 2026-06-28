@@ -95,6 +95,11 @@ docker compose up -d --build
 3. `XHS-Downloader` API 默认暴露在 `http://localhost:5556/docs`
 4. 宿主机 `./state` 会挂载到容器内，重启容器不会丢失状态
 
+在 NAS 或其他局域网机器上访问时，把 `localhost` 换成 NAS 的局域网 IP，例如
+`http://192.168.1.4:3001/admin`。如果页面能打开但显示 `Bot 未登录`，说明 HTTP 服务已经可用，
+只是还没有恢复或添加已登录账号，需要进入「账号管理」扫码添加。可用
+`http://192.168.1.4:3001/health` 检查 HTTP 服务是否在线。
+
 如果你不需要自定义配置，也可以跳过 `cp .env.example .env`，Compose 会直接使用内置默认值。
 
 常用命令：
