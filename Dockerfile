@@ -3,17 +3,16 @@ FROM rust:1.90-bookworm AS builder
 WORKDIR /app
 
 COPY .cargo ./.cargo
+COPY vendor ./vendor
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY static ./static
 
-RUN cargo build --release
+RUN cargo build --release --locked --offline
 
 FROM debian:bookworm-slim AS runtime
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
 
 WORKDIR /app
 
