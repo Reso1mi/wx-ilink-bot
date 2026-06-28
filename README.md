@@ -113,6 +113,13 @@ sudo docker-compose logs --tail=200 -f wx-ilink-bot
 sudo docker logs --tail=200 -f wx-ilink-bot
 ```
 
+如果错误里出现 `dns error`、`Temporary failure in name resolution`，说明容器内 DNS 解析失败。
+`docker-compose.yml` 已为服务显式配置公共 DNS，更新后需要重建容器让 DNS 配置生效：
+
+```bash
+sudo docker-compose up -d --build --force-recreate wx-ilink-bot
+```
+
 如果你不需要自定义配置，也可以跳过 `cp .env.example .env`，Compose 会直接使用内置默认值。
 
 常用命令：
