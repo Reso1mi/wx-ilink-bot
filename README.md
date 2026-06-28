@@ -90,7 +90,7 @@ docker compose up -d --build
 ```
 
 启动后：
-1. 管理后台默认地址为 `http://localhost:3000/admin`
+1. 管理后台默认地址为 `http://localhost:3001/admin`
 2. 容器内状态目录固定为 `/app/state`
 3. `XHS-Downloader` API 默认暴露在 `http://localhost:5556/docs`
 4. 宿主机 `./state` 会挂载到容器内，重启容器不会丢失状态
@@ -138,7 +138,8 @@ docker run -d \
 | `BOT_BASE_URL` | iLink API 地址 | `https://ilinkai.weixin.qq.com` |
 | `BOT_APP_ID` | App ID | `bot` |
 | `BOT_VERSION` | 客户端版本号 | `1.0.0` |
-| `BOT_HTTP_PORT` | HTTP 管理接口端口 | `3000` |
+| `BOT_HTTP_PORT` | HTTP 管理接口容器内监听端口 | `3000` |
+| `BOT_HTTP_HOST_PORT` | HTTP 管理接口对外暴露端口（Compose） | `3001` |
 | `BOT_XHS_API_URL` | `XHS-Downloader` API 地址 | `http://127.0.0.1:5556` |
 | `BOT_XHS_API_PORT` | `XHS-Downloader` 对外暴露端口（Compose） | `5556` |
 | `BOT_XHS_COOKIE` | 小红书请求 Cookie（可选） | 空 |

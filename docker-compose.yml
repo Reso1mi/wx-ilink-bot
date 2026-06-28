@@ -30,7 +30,7 @@ services:
       BOT_XHS_PROXY: "${BOT_XHS_PROXY:-}"
       BOT_XHS_TIMEOUT_MS: "${BOT_XHS_TIMEOUT_MS:-60000}"
     ports:
-      - "${BOT_HTTP_PORT:-3000}:${BOT_HTTP_PORT:-3000}"
+      - "${BOT_HTTP_HOST_PORT:-3001}:${BOT_HTTP_PORT:-3000}"
     volumes:
       - ./state:/app/state
 
