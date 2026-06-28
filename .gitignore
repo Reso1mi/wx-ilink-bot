@@ -3,7 +3,8 @@
 **/*.rs.bk
 
 # 状态文件（包含敏感 token）
-/state/
+/state/*
+!/state/.gitkeep
 
 # 环境变量
 .env
