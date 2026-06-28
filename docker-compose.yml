@@ -23,6 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      network: host
     container_name: wx-ilink-bot
     restart: unless-stopped
     dns:
