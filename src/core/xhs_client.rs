@@ -27,6 +27,7 @@ pub struct XhsClient {
     api_base_url: String,
     cookie: Option<String>,
     proxy: Option<String>,
+    api_timeout: Duration,
     api_client: Client,
     media_client: Client,
 }
@@ -93,6 +94,7 @@ impl XhsClient {
             api_base_url,
             cookie: non_empty(config.cookie),
             proxy: non_empty(config.proxy),
+            api_timeout,
             api_client: Client::builder()
                 .timeout(api_timeout)
                 .build()
@@ -125,7 +127,13 @@ impl XhsClient {
             .json(&request)
             .send()
             .await
-            .context("请求 XHS-Downloader 失败")?;
+            .with_context(|| {
+                format!(
+                    "请求 XHS-Downloader 失败: endpoint={} timeout_ms={}",
+                    endpoint,
+                    self.api_timeout.as_millis()
+                )
+            })?;
 
         let status = response.status();
         let body = response.text().await.context("读取 XHS 响应失败")?;

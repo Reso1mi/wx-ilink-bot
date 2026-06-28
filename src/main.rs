@@ -84,10 +84,12 @@ async fn main() {
     println!("按 Ctrl+C 停止\n");
 
     let bot_http = Arc::clone(&bot);
+    let http_config = config.clone();
     let http_handle = tokio::spawn(async move {
         let state = http_server::AppState {
             bot: bot_http,
             nickname_store: nickname_store.clone(),
+            config: http_config,
         };
         http_server::start_http_server(state, http_port).await;
     });

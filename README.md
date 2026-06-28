@@ -141,6 +141,19 @@ host network 模式下没有端口映射，`wx-ilink-bot` 会直接监听 `BOT_H
 
 如果你不需要自定义配置，也可以跳过 `cp .env.example .env`，Compose 会直接使用内置默认值。
 
+小红书解析失败时，先检查 Bot 到 `XHS-Downloader` 的连通性：
+
+```bash
+curl http://192.168.1.4:3001/xhs/health
+sudo docker-compose logs --tail=200 xhs-downloader
+```
+
+如果 `/xhs/health` 失败，通常是 `BOT_XHS_API_URL` 不对或 `xhs-downloader` 容器不可达。
+普通 Compose 默认使用 `http://xhs-downloader:5556`，host network 备用编排默认使用
+`http://127.0.0.1:5556`。如果 `/xhs/health` 成功但解析链接超时，多半是
+`xhs-downloader` 容器访问 `xhslink.com` / `xiaohongshu.com` 受限，需要检查
+`xhs-downloader` 日志、Cookie 或代理配置。
+
 常用命令：
 
 ```bash

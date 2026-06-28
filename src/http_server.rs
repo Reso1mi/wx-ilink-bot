@@ -8,9 +8,10 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tracing::{info, warn};
 
+use crate::config::AppConfig;
 use crate::core::bot::WeixinBot;
 use crate::core::nickname_store::NicknameStore;
 
@@ -19,6 +20,7 @@ use crate::core::nickname_store::NicknameStore;
 pub struct AppState {
     pub bot: Arc<WeixinBot>,
     pub nickname_store: NicknameStore,
+    pub config: AppConfig,
 }
 
 /// 创建 HTTP 路由
@@ -27,6 +29,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/", get(index_handler))
         .route("/admin", get(admin_handler))
         .route("/health", get(health_handler))
+        .route("/xhs/health", get(xhs_health_handler))
         .route("/status", get(status_handler))
         .route("/users", get(users_handler))
         .route("/accounts", get(accounts_handler))
@@ -51,6 +54,7 @@ async fn index_handler() -> Json<Value> {
         "endpoints": {
             "GET /admin": "管理后台页面",
             "GET /health": "健康检查",
+            "GET /xhs/health": "XHS-Downloader 连通性检查",
             "GET /status": "Bot 状态",
             "GET /accounts": "所有账号列表",
             "GET /users": "所有已连接用户",
@@ -71,6 +75,43 @@ async fn admin_handler() -> Html<&'static str> {
 /// 健康检查
 async fn health_handler() -> Json<Value> {
     Json(json!({ "status": "ok" }))
+}
+
+/// XHS-Downloader 连通性检查
+async fn xhs_health_handler(State(state): State<AppState>) -> Json<Value> {
+    let base_url = state.config.xhs_api_url.trim_end_matches('/').to_string();
+    let docs_url = format!("{base_url}/docs");
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+    {
+        Ok(client) => client,
+        Err(e) => {
+            return Json(json!({
+                "success": false,
+                "api_url": base_url,
+                "error": format!("创建 HTTP 客户端失败: {e:#}"),
+            }));
+        }
+    };
+
+    match client.get(&docs_url).send().await {
+        Ok(response) => {
+            let status = response.status();
+            Json(json!({
+                "success": status.is_success(),
+                "api_url": base_url,
+                "probe_url": docs_url,
+                "status": status.as_u16(),
+            }))
+        }
+        Err(e) => Json(json!({
+            "success": false,
+            "api_url": base_url,
+            "probe_url": docs_url,
+            "error": format!("{e:#}"),
+        })),
+    }
 }
 
 /// Bot 状态

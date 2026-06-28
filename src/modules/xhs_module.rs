@@ -169,11 +169,19 @@ impl ModuleHandler for XhsModule {
                 }
             },
             Err(error) => {
+                let error_text = format!("{error:#}");
                 warn!(
                     "处理小红书链接失败: user={} link={} error={}",
-                    msg.user_id, link, error
+                    msg.user_id, link, error_text
                 );
-                reply(sender, msg, &format!("解析小红书链接失败: {error}")).await?;
+                if let Err(reply_error) =
+                    reply(sender, msg, &format!("解析小红书链接失败: {error_text}")).await
+                {
+                    warn!(
+                        "发送小红书失败提示失败: user={} link={} xhs_error={} reply_error={}",
+                        msg.user_id, link, error_text, reply_error
+                    );
+                }
             }
         }
 
