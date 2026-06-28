@@ -128,8 +128,8 @@ sudo docker inspect wx-ilink-bot --format '{{json .HostConfig.Dns}}'
 sudo docker exec wx-ilink-bot getent hosts ilinkai.weixin.qq.com
 ```
 
-在部分 NAS / Docker 网络环境中，Docker 的内置 DNS 可能仍不可用。可以改用 host network
-备用编排文件，让 `wx-ilink-bot` 直接使用 NAS 宿主机网络和 DNS：
+在部分 NAS / Docker 网络环境中，Docker 的内置 DNS 或 bridge 出网可能不可用。可以改用
+host network 备用编排文件，让 `wx-ilink-bot` 和 `XHS-Downloader` 都直接使用 NAS 宿主机网络：
 
 ```bash
 sudo docker-compose down
@@ -137,7 +137,8 @@ sudo docker-compose -f docker-compose.hostnet.yml up -d --build --force-recreate
 ```
 
 host network 模式下没有端口映射，`wx-ilink-bot` 会直接监听 `BOT_HTTP_HOST_PORT`，
-默认仍是 `3001`，访问地址保持 `http://192.168.1.4:3001/admin`。
+默认仍是 `3001`；`XHS-Downloader` 会直接监听 `5556`。访问地址保持
+`http://192.168.1.4:3001/admin`。
 
 如果你不需要自定义配置，也可以跳过 `cp .env.example .env`，Compose 会直接使用内置默认值。
 

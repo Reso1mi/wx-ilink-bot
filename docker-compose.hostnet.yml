@@ -4,12 +4,7 @@ services:
     container_name: xhs-downloader
     command: ["python", "main.py", "api"]
     restart: unless-stopped
-    dns:
-      - 223.5.5.5
-      - 119.29.29.29
-      - 8.8.8.8
-    ports:
-      - "${BOT_XHS_API_PORT:-5556}:5556"
+    network_mode: host
     volumes:
       - xhs-downloader-volume:/app/Volume
       - ./xhs-settings.json:/app/Volume/settings.json:ro
