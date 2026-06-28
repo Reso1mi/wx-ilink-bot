@@ -114,10 +114,12 @@ sudo docker logs --tail=200 -f wx-ilink-bot
 ```
 
 如果错误里出现 `dns error`、`Temporary failure in name resolution`，说明容器内 DNS 解析失败。
-`docker-compose.yml` 已为服务显式配置公共 DNS，更新后需要重建容器让 DNS 配置生效：
+`docker-compose.yml` 已为服务显式配置公共 DNS 和自定义 bridge 网络，更新后需要重建容器和网络让配置生效：
 
 ```bash
-sudo docker-compose up -d --build --force-recreate wx-ilink-bot
+sudo docker-compose down
+sudo docker network prune -f
+sudo docker-compose up -d --build --force-recreate
 ```
 
 如果重建后容器内仍无法解析域名：
@@ -128,17 +130,19 @@ sudo docker inspect wx-ilink-bot --format '{{json .HostConfig.Dns}}'
 sudo docker exec wx-ilink-bot getent hosts ilinkai.weixin.qq.com
 ```
 
-在部分 NAS / Docker 网络环境中，Docker 的内置 DNS 或 bridge 出网可能不可用。可以改用
-host network 备用编排文件，让 `wx-ilink-bot` 和 `XHS-Downloader` 都直接使用 NAS 宿主机网络：
+如果 DNS 配置正确但仍无法出网，继续检查容器到公网的连通性：
 
 ```bash
-sudo docker-compose down
-sudo docker-compose -f docker-compose.hostnet.yml up -d --build --force-recreate
+sudo docker exec wx-ilink-bot getent hosts index.crates.io
+sudo docker exec wx-ilink-bot getent hosts ilinkai.weixin.qq.com
+sudo docker exec xhs-downloader getent hosts xhslink.com
 ```
 
-host network 模式下没有端口映射，`wx-ilink-bot` 会直接监听 `BOT_HTTP_HOST_PORT`，
-默认仍是 `3001`；`XHS-Downloader` 会直接监听 `5556`。访问地址保持
-`http://192.168.1.4:3001/admin`。
+也可以直接运行内置诊断脚本：
+
+```bash
+BOT_URL=http://192.168.1.4:3001 ./scripts/docker-network-check.sh
+```
 
 如果你不需要自定义配置，也可以跳过 `cp .env.example .env`，Compose 会直接使用内置默认值。
 
@@ -150,10 +154,9 @@ sudo docker-compose logs --tail=200 xhs-downloader
 ```
 
 如果 `/xhs/health` 失败，通常是 `BOT_XHS_API_URL` 不对或 `xhs-downloader` 容器不可达。
-普通 Compose 默认使用 `http://xhs-downloader:5556`，host network 备用编排默认使用
-`http://127.0.0.1:5556`。如果 `/xhs/health` 成功但解析链接超时，多半是
-`xhs-downloader` 容器访问 `xhslink.com` / `xiaohongshu.com` 受限，需要检查
-`xhs-downloader` 日志、Cookie 或代理配置。
+Compose 默认使用 `http://xhs-downloader:5556`。如果 `/xhs/health` 成功但解析链接超时，
+多半是 `xhs-downloader` 容器访问 `xhslink.com` / `xiaohongshu.com` 受限，需要检查
+`xhs-downloader` 日志、Cookie、代理或 NAS Docker bridge 出网配置。
 
 常用命令：
 
@@ -203,6 +206,7 @@ docker run -d \
 | `BOT_XHS_COOKIE` | 小红书请求 Cookie（可选） | 空 |
 | `BOT_XHS_PROXY` | 小红书请求代理（可选） | 空 |
 | `BOT_XHS_TIMEOUT_MS` | `XHS-Downloader` API 超时时间（毫秒） | `60000` |
+| `BOT_DOCKER_SUBNET` | Compose 自定义 bridge 子网 | `172.28.0.0/16` |
 
 ### 小红书去水印
 

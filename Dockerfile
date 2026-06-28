@@ -3,12 +3,11 @@ FROM rust:1.90-bookworm AS builder
 WORKDIR /app
 
 COPY .cargo ./.cargo
-COPY vendor ./vendor
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY static ./static
 
-RUN cargo build --release --locked --offline
+RUN cargo build --release --locked
 
 FROM debian:bookworm-slim AS runtime
 

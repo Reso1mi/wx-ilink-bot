@@ -8,11 +8,16 @@ services:
       - 223.5.5.5
       - 119.29.29.29
       - 8.8.8.8
+    dns_opt:
+      - timeout:2
+      - attempts:3
     ports:
       - "${BOT_XHS_API_PORT:-5556}:5556"
     volumes:
       - xhs-downloader-volume:/app/Volume
       - ./xhs-settings.json:/app/Volume/settings.json:ro
+    networks:
+      - wx-ilink-net
 
   wx-ilink-bot:
     build:
@@ -24,6 +29,9 @@ services:
       - 223.5.5.5
       - 119.29.29.29
       - 8.8.8.8
+    dns_opt:
+      - timeout:2
+      - attempts:3
     depends_on:
       - xhs-downloader
     environment:
@@ -41,6 +49,17 @@ services:
       - "${BOT_HTTP_HOST_PORT:-3001}:${BOT_HTTP_PORT:-3000}"
     volumes:
       - ./state:/app/state
+    networks:
+      - wx-ilink-net
 
 volumes:
   xhs-downloader-volume:
+
+networks:
+  wx-ilink-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    ipam:
+      config:
+        - subnet: "${BOT_DOCKER_SUBNET:-172.28.0.0/16}"
